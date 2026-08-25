@@ -1,0 +1,9 @@
+HELP.md
+target/
+.idea/
+.vscode/
+*.iml
+data/
+.env
+*.log
+.codex-tools/
