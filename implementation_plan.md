@@ -9,7 +9,7 @@ Existem dois fluxos deliberadamente separados:
 1. A fila e sincrona, transacional e nunca acessa o LLM.
 2. A gestao consolida dados e cria jobs assincronos para analise pelo LLM.
 
-A integracao Gemini fica na API atras de `AnaliseLogisticaPort`, com adapters `fake` e `gemini`. Um servico separado so deve ser considerado quando houver necessidade comprovada de deploy, equipe ou escala independentes.
+A integracao Gemini fica na API atras de `AnaliseLogisticaPort`, com adapters `fake` e `gemini`. O modelo configurado por padrao no prototipo e `gemini-3.6-flash`, com override por `GEMINI_MODEL`. Um servico separado so deve ser considerado quando houver necessidade comprovada de deploy, equipe ou escala independentes.
 
 ## Modelo inicial
 
@@ -41,7 +41,7 @@ Bloqueios de negocio retornam HTTP 200 com sinal vermelho. Entradas invalidas e 
 2. Regra transacional de consumo unico e fila com QR Code.
 3. Cadastro e reconhecimento facial local no navegador.
 4. Consolidacao deterministica e dashboard gerencial.
-5. Job persistido, adapter fake e integracao Gemini free tier.
+5. Job persistido, adapter fake e integracao Gemini free tier. **Fundacao implementada:** consolidacao, estados do job, porta de IA, adapter fake e adapter Gemini com saida estruturada.
 6. Testes de concorrencia, privacidade, acessibilidade e documentacao final.
 
 ## Criterios de aceite

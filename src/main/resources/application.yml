@@ -27,3 +27,8 @@ management:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+merenda:
+  ia:
+    provedor: fake
+    modelo: regras-locais-v1
