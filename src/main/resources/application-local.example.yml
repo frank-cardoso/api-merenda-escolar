@@ -1,0 +1,19 @@
+# Copie este arquivo para application-local.yml e preencha a chave localmente.
+# O application-local.yml real fica ignorado pelo Git.
+#
+# Para usar:
+# .\mvnw.cmd spring-boot:run -Plocal
+
+spring:
+  ai:
+    google:
+      genai:
+        api-key: coloque-sua-chave-aqui
+        chat:
+          options:
+            model: gemini-3.6-flash
+
+merenda:
+  analytics:
+    base-url: http://localhost:8000
+    timeout: 2s

@@ -1,5 +1,8 @@
 package br.com.frankcardoso.merenda.relatorio.application;
 
+import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoInput;
+import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoOutput;
+import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoPort;
 import br.com.frankcardoso.merenda.gestao.api.ConsolidacaoConsumoResponse;
 import br.com.frankcardoso.merenda.gestao.application.ConsolidacaoConsumoService;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaInput;
@@ -21,6 +24,7 @@ public class RelatorioIAWorker {
     private final RelatorioIARepository repository;
     private final ConsolidacaoConsumoService consolidacaoService;
     private final AnaliseLogisticaPort analisePort;
+    private final PrevisaoConsumoPort previsaoPort;
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final String provedor;
@@ -30,6 +34,7 @@ public class RelatorioIAWorker {
         RelatorioIARepository repository,
         ConsolidacaoConsumoService consolidacaoService,
         AnaliseLogisticaPort analisePort,
+        PrevisaoConsumoPort previsaoPort,
         ObjectMapper objectMapper,
         Clock clock,
         @Value("${merenda.ia.provedor:fake}") String provedor,
@@ -38,6 +43,7 @@ public class RelatorioIAWorker {
         this.repository = repository;
         this.consolidacaoService = consolidacaoService;
         this.analisePort = analisePort;
+        this.previsaoPort = previsaoPort;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.provedor = provedor;
@@ -52,7 +58,7 @@ public class RelatorioIAWorker {
         try {
             ConsolidacaoConsumoResponse consolidacao = consolidacaoService.consolidar(
                 relatorio.getDataReferencia(), relatorio.getTurno());
-            AnaliseLogisticaInput input = criarInput(consolidacao);
+            AnaliseLogisticaInput input = criarInput(consolidacao, preverConsumo(consolidacao));
 
             relatorio.iniciar(provedor, modelo, escreverJson(input), Instant.now(clock));
             relatorio = repository.saveAndFlush(relatorio);
@@ -68,7 +74,10 @@ public class RelatorioIAWorker {
         }
     }
 
-    private AnaliseLogisticaInput criarInput(ConsolidacaoConsumoResponse consolidacao) {
+    private AnaliseLogisticaInput criarInput(
+        ConsolidacaoConsumoResponse consolidacao,
+        ResultadoPrevisao resultadoPrevisao
+    ) {
         return new AnaliseLogisticaInput(
             consolidacao.data(),
             consolidacao.turno(),
@@ -77,8 +86,35 @@ public class RelatorioIAWorker {
             consolidacao.consumosAutorizados(),
             consolidacao.tentativasBloqueadas(),
             consolidacao.taxaConsumoPlanejado(),
-            consolidacao.sobraEstimada()
+            consolidacao.sobraEstimada(),
+            resultadoPrevisao.previsao(),
+            resultadoPrevisao.aviso()
         );
+    }
+
+    private ResultadoPrevisao preverConsumo(ConsolidacaoConsumoResponse consolidacao) {
+        try {
+            var previsao = previsaoPort.prever(new PrevisaoConsumoInput(
+                consolidacao.data(),
+                consolidacao.turno(),
+                consolidacao.cardapio(),
+                consolidacao.quantidadePlanejada(),
+                consolidacao.consumosAutorizados(),
+                consolidacao.tentativasBloqueadas(),
+                consolidacao.taxaConsumoPlanejado(),
+                consolidacao.sobraEstimada()
+            ));
+
+            return new ResultadoPrevisao(previsao, null);
+        } catch (Exception exception) {
+            return new ResultadoPrevisao(null, mensagemSegura(exception));
+        }
+    }
+
+    private record ResultadoPrevisao(
+        PrevisaoConsumoOutput previsao,
+        String aviso
+    ) {
     }
 
     private String escreverJson(Object valor) throws JsonProcessingException {

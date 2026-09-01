@@ -85,4 +85,19 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>gemini</id>
+            <properties>
+                <spring-boot.run.profiles>gemini</spring-boot.run.profiles>
+            </properties>
+        </profile>
+        <profile>
+            <id>local</id>
+            <properties>
+                <spring-boot.run.profiles>gemini,local</spring-boot.run.profiles>
+            </properties>
+        </profile>
+    </profiles>
 </project>

@@ -32,3 +32,6 @@ merenda:
   ia:
     provedor: fake
     modelo: regras-locais-v1
+  analytics:
+    base-url: ${MERENDA_ANALYTICS_BASE_URL:http://localhost:8000}
+    timeout: ${MERENDA_ANALYTICS_TIMEOUT:2s}
