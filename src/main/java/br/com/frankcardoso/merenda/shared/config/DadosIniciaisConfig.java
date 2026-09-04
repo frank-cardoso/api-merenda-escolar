@@ -36,11 +36,15 @@ public class DadosIniciaisConfig {
 
             LocalDate hoje = LocalDate.now(clock.withZone(ZONA_OPERACIONAL));
             for (Turno turno : Turno.values()) {
-                if (!cardapios.existsByDataAndTurno(hoje, turno)) {
+                if (!cardapios.existsByDataAndTurnoAndAtivoTrue(hoje, turno)) {
                     cardapios.save(new Cardapio(UUID.randomUUID(), hoje, turno,
                         "Arroz, feijao, frango e salada",
                         "Cardapio demonstrativo do prototipo",
-                        "[\"arroz\",\"feijao\",\"frango\",\"salada\"]",
+                        """
+                        [{"nome":"arroz","quantidade":"10 kg"},\
+                        {"nome":"feijao","quantidade":"6 kg"},\
+                        {"nome":"frango","quantidade":"15 kg"},\
+                        {"nome":"salada","quantidade":"4 kg"}]""",
                         300, true));
                 }
             }

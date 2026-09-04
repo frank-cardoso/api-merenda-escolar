@@ -54,6 +54,32 @@ public class Cardapio {
         this.ativo = ativo;
     }
 
+    public void atualizar(LocalDate data, Turno turno, String nomeRefeicao, String descricao,
+                          String itensJson, int quantidadePlanejada) {
+        exigirAtivo();
+        this.data = data;
+        this.turno = turno;
+        this.nomeRefeicao = nomeRefeicao;
+        this.descricao = descricao;
+        this.itensJson = itensJson;
+        this.quantidadePlanejada = quantidadePlanejada;
+    }
+
+    /**
+     * Marca o cardapio como inativo em vez de remove-lo. A linha continua existindo porque
+     * auditoria_consumo referencia o cardapio servido e esse historico nao pode ser perdido.
+     */
+    public void desativar() {
+        exigirAtivo();
+        this.ativo = false;
+    }
+
+    private void exigirAtivo() {
+        if (!ativo) {
+            throw new IllegalStateException("Cardapio inativo nao pode ser alterado");
+        }
+    }
+
     public UUID getId() { return id; }
     public LocalDate getData() { return data; }
     public Turno getTurno() { return turno; }

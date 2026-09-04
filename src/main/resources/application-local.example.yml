@@ -13,6 +13,9 @@ spring:
           options:
             model: gemini-3.6-flash
 
+# Fallback (opcional): usado se o Gemini falhar. Gere uma chave gratuita em console.groq.com
+GROQ_API_KEY: coloque-sua-chave-aqui
+
 merenda:
   analytics:
     base-url: http://localhost:8000

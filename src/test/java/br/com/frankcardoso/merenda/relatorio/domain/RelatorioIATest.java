@@ -18,12 +18,13 @@ class RelatorioIATest {
 
         relatorio.iniciar("gemini", "gemini-2.5-flash", "{\"consumosAutorizados\":80}",
             CRIADO_EM.plusSeconds(1));
-        relatorio.concluir("{\"riscoDesperdicio\":\"BAIXO\"}", "Baixo risco",
+        relatorio.concluir("groq", "llama-3.3-70b", "{\"riscoDesperdicio\":\"BAIXO\"}", "Baixo risco",
             CRIADO_EM.plusSeconds(2));
 
         assertThat(relatorio.getStatus()).isEqualTo(StatusRelatorioIA.CONCLUIDO);
         assertThat(relatorio.getTentativas()).isEqualTo(1);
-        assertThat(relatorio.getProvedor()).isEqualTo("gemini");
+        assertThat(relatorio.getProvedor()).isEqualTo("groq");
+        assertThat(relatorio.getModelo()).isEqualTo("llama-3.3-70b");
         assertThat(relatorio.getResumo()).isEqualTo("Baixo risco");
         assertThat(relatorio.getConcluidoEm()).isEqualTo(CRIADO_EM.plusSeconds(2));
     }
@@ -32,7 +33,8 @@ class RelatorioIATest {
     void naoDeveConcluirRelatorioQueAindaEstaPendente() {
         var relatorio = RelatorioIA.pendente(LocalDate.of(2026, 8, 26), Turno.TARDE, CRIADO_EM);
 
-        assertThatThrownBy(() -> relatorio.concluir("{}", "Resumo", CRIADO_EM.plusSeconds(1)))
+        assertThatThrownBy(() -> relatorio.concluir("gemini", "gemini-2.5-flash", "{}", "Resumo",
+            CRIADO_EM.plusSeconds(1)))
             .isInstanceOf(IllegalStateException.class)
             .hasMessage("Relatorio nao esta em processamento");
     }

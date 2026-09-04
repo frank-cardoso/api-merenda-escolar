@@ -13,6 +13,16 @@ import org.springframework.stereotype.Component;
 public class FakeAnaliseLogisticaAdapter implements AnaliseLogisticaPort {
 
     @Override
+    public String provedor() {
+        return "fake";
+    }
+
+    @Override
+    public String modelo() {
+        return "regras-locais-v1";
+    }
+
+    @Override
     public AnaliseLogisticaOutput analisar(AnaliseLogisticaInput input) {
         var aceitacao = classificarAceitacao(input.taxaConsumoPlanejado());
         var risco = classificarRisco(input.taxaConsumoPlanejado());

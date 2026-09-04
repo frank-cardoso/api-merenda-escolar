@@ -97,7 +97,8 @@ class RelatorioIAWorkerTest {
             objectMapper,
             clock,
             "gemini",
-            "gemini-3.6-flash"
+            "gemini-3.6-flash",
+            30
         );
 
         worker.processar(relatorioId);
@@ -146,7 +147,8 @@ class RelatorioIAWorkerTest {
             objectMapper,
             clock,
             "gemini",
-            "gemini-3.6-flash"
+            "gemini-3.6-flash",
+            30
         );
 
         worker.processar(relatorioId);

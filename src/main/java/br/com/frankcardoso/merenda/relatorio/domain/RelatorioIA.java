@@ -96,9 +96,11 @@ public class RelatorioIA {
         this.concluidoEm = null;
     }
 
-    public void concluir(String resultadoJson, String resumo, Instant agora) {
+    public void concluir(String provedor, String modelo, String resultadoJson, String resumo, Instant agora) {
         exigirProcessando();
         this.status = StatusRelatorioIA.CONCLUIDO;
+        this.provedor = provedor;
+        this.modelo = modelo;
         this.resultadoJson = resultadoJson;
         this.resumo = resumo;
         this.concluidoEm = agora;
