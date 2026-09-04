@@ -3,8 +3,10 @@ package br.com.frankcardoso.merenda.relatorio.application;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoInput;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoOutput;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoPort;
+import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.gestao.api.ConsolidacaoConsumoResponse;
 import br.com.frankcardoso.merenda.gestao.application.ConsolidacaoConsumoService;
+import br.com.frankcardoso.merenda.historico.application.HistoricoConsumoService;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaInput;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaOutput;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaPort;
@@ -15,7 +17,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -31,17 +35,24 @@ public class RelatorioIAWorker {
     private final ConsolidacaoConsumoService consolidacaoService;
     private final AnaliseLogisticaPort analisePort;
     private final PrevisaoConsumoPort previsaoPort;
+    private final HistoricoConsumoService historicoService;
+    private final AuditoriaConsumoRepository auditoriaRepository;
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final String provedor;
     private final String modelo;
     private final Duration timeoutAnaliseIA;
 
+    /** Vinte dias uteis cobrem cerca de um mes e ja dao confianca ALTA na previsao. */
+    private static final int DIAS_DE_HISTORICO_NA_PREVISAO = 20;
+
     public RelatorioIAWorker(
         RelatorioIARepository repository,
         ConsolidacaoConsumoService consolidacaoService,
         AnaliseLogisticaPort analisePort,
         PrevisaoConsumoPort previsaoPort,
+        HistoricoConsumoService historicoService,
+        AuditoriaConsumoRepository auditoriaRepository,
         ObjectMapper objectMapper,
         Clock clock,
         @Value("${merenda.ia.provedor:fake}") String provedor,
@@ -52,6 +63,8 @@ public class RelatorioIAWorker {
         this.consolidacaoService = consolidacaoService;
         this.analisePort = analisePort;
         this.previsaoPort = previsaoPort;
+        this.historicoService = historicoService;
+        this.auditoriaRepository = auditoriaRepository;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.provedor = provedor;
@@ -94,13 +107,16 @@ public class RelatorioIAWorker {
             consolidacao.data(),
             consolidacao.turno(),
             consolidacao.cardapio(),
+            consolidacao.itensCardapio(),
             consolidacao.quantidadePlanejada(),
             consolidacao.consumosAutorizados(),
             consolidacao.tentativasBloqueadas(),
             consolidacao.taxaConsumoPlanejado(),
             consolidacao.sobraEstimada(),
             resultadoPrevisao.previsao(),
-            resultadoPrevisao.aviso()
+            resultadoPrevisao.aviso(),
+            historicoService.resumir(consolidacao.data(), consolidacao.turno(),
+                consolidacao.itensCardapio())
         );
     }
 
@@ -114,13 +130,30 @@ public class RelatorioIAWorker {
                 consolidacao.consumosAutorizados(),
                 consolidacao.tentativasBloqueadas(),
                 consolidacao.taxaConsumoPlanejado(),
-                consolidacao.sobraEstimada()
+                consolidacao.sobraEstimada(),
+                consumosDosDiasAnteriores(consolidacao)
             ));
 
             return new ResultadoPrevisao(previsao, null);
         } catch (Exception exception) {
             return new ResultadoPrevisao(null, mensagemSegura(exception));
         }
+    }
+
+    /**
+     * Serie de consumo dos dias anteriores no mesmo turno, para a previsao deixar de ser
+     * circular: sem ela o servico devolve o consumo do proprio dia como estimativa.
+     */
+    private List<PrevisaoConsumoInput.DiaConsumo> consumosDosDiasAnteriores(
+        ConsolidacaoConsumoResponse consolidacao
+    ) {
+        return auditoriaRepository.consumosPorDia(
+                consolidacao.turno(),
+                consolidacao.data(),
+                PageRequest.of(0, DIAS_DE_HISTORICO_NA_PREVISAO))
+            .stream()
+            .map(dia -> new PrevisaoConsumoInput.DiaConsumo(dia.getData(), dia.getAutorizados()))
+            .toList();
     }
 
     private record ResultadoPrevisao(

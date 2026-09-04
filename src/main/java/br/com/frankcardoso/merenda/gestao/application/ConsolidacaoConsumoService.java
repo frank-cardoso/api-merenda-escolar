@@ -5,22 +5,32 @@ import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.gestao.api.ConsolidacaoConsumoResponse;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ConsolidacaoConsumoService {
 
+    private static final TypeReference<List<ItemCardapio>> LISTA_DE_ITENS = new TypeReference<>() {
+    };
+
     private final CardapioRepository cardapioRepository;
     private final AuditoriaConsumoRepository auditoriaRepository;
+    private final ObjectMapper objectMapper;
 
     public ConsolidacaoConsumoService(CardapioRepository cardapioRepository,
-                                      AuditoriaConsumoRepository auditoriaRepository) {
+                                      AuditoriaConsumoRepository auditoriaRepository,
+                                      ObjectMapper objectMapper) {
         this.cardapioRepository = cardapioRepository;
         this.auditoriaRepository = auditoriaRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
@@ -40,12 +50,32 @@ public class ConsolidacaoConsumoService {
             turno,
             cardapio.getId(),
             cardapio.getNomeRefeicao(),
+            lerNomesDosItens(cardapio.getItensJson()),
             cardapio.getQuantidadePlanejada(),
             autorizados,
             bloqueados,
             taxa,
             sobra
         );
+    }
+
+    /**
+     * Extrai apenas os nomes dos itens. A quantidade por item (ex.: "10 kg") e informacao de
+     * compra, nao ajuda a analise de aceitacao e so gastaria espaco no prompt.
+     */
+    private List<String> lerNomesDosItens(String itensJson) {
+        if (itensJson == null || itensJson.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(itensJson, LISTA_DE_ITENS).stream()
+                .map(ItemCardapio::nome)
+                .filter(nome -> nome != null && !nome.isBlank())
+                .toList();
+        } catch (JsonProcessingException exception) {
+            return List.of();
+        }
+    }
+
+    private record ItemCardapio(String nome, String quantidade) {
     }
 
     private BigDecimal calcularTaxa(long consumos, int quantidadePlanejada) {

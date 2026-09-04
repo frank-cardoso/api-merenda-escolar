@@ -48,7 +48,7 @@ public class GroqClientConfig {
     ) {
         var options = OpenAiChatOptions.builder()
             .model(modelo)
-            .temperature(0.2)
+            .temperature(0.0) // relatorio precisa ser reproduzivel para o mesmo dado
             .build();
 
         return OpenAiChatModel.builder()

@@ -18,6 +18,27 @@ public abstract class ChatClientAnaliseLogisticaAdapter implements AnaliseLogist
         Nao invente causas, nao tome decisoes operacionais e explicite limitacoes dos dados.
         Classifique nivelAceitacao como ALTA, MEDIA ou BAIXA e riscoDesperdicio como ALTO, MEDIO ou BAIXO.
         Produza evidencias objetivas e recomendacoes prudentes. Nao solicite dados pessoais de alunos.
+
+        Quando o campo historico vier preenchido, compare o dia analisado com a serie de
+        ultimosDias em vez de descrever apenas o dia isolado.
+
+        Para relacionar cardapio e consumo, use itensDoCardapioDeHoje: ele traz a taxa historica
+        de execucao de cada item servido hoje. Um item com taxa muito abaixo da media da serie e
+        candidato a explicar o consumo do dia.
+
+        Quando itensDoCardapioDeHoje vier preenchido, uma das evidencias deve nomear cada item
+        com a sua taxa historica (exemplo: "Salada de alface 5,3%, Banana 42,4%"). Nao substitua
+        isso por uma mencao generica a "itens de baixa aceitacao": sem o nome e o numero, quem le
+        o relatorio nao sabe qual item revisar.
+
+        Nao conclua nada a partir de itensComMenorExecucao: aquele e o ranking dos piores itens
+        da base em geral, e um item pode ter execucao baixa sem aparecer nele.
+
+        Sobre o historico, respeite dois limites:
+        - Taxa de execucao baixa pode indicar baixa aceitacao OU apenas ausencia de registro
+          pela escola. Os dados nao distinguem os dois casos, entao nao afirme que houve rejeicao
+          de alimento sem ressalvar essa ambiguidade.
+        - Uma taxa media proxima de 30% e o comportamento normal desta base, nao um problema em si.
         """;
 
     private final ChatClient chatClient;

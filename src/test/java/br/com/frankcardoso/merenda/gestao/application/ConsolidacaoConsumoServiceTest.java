@@ -12,9 +12,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -27,14 +28,19 @@ class ConsolidacaoConsumoServiceTest {
     @Mock
     private AuditoriaConsumoRepository auditoriaRepository;
 
-    @InjectMocks
     private ConsolidacaoConsumoService service;
+
+    @BeforeEach
+    void prepararService() {
+        service = new ConsolidacaoConsumoService(
+            cardapioRepository, auditoriaRepository, new ObjectMapper().findAndRegisterModules());
+    }
 
     @Test
     void deveCalcularIndicadoresSemConsultarIa() {
         var data = LocalDate.of(2026, 8, 26);
         var cardapio = new Cardapio(UUID.randomUUID(), data, Turno.MANHA, "Arroz e feijao",
-            "Teste", "[]", 100, true);
+            "Teste", "[{\"nome\":\"arroz\"},{\"nome\":\"feijao\"}]", 100, true);
 
         when(cardapioRepository.findByDataAndTurnoAndAtivoTrue(data, Turno.MANHA))
             .thenReturn(Optional.of(cardapio));
@@ -49,5 +55,6 @@ class ConsolidacaoConsumoServiceTest {
         assertThat(resultado.tentativasBloqueadas()).isEqualTo(8);
         assertThat(resultado.taxaConsumoPlanejado()).isEqualByComparingTo(new BigDecimal("75.00"));
         assertThat(resultado.sobraEstimada()).isEqualTo(25);
+        assertThat(resultado.itensCardapio()).containsExactly("arroz", "feijao");
     }
 }

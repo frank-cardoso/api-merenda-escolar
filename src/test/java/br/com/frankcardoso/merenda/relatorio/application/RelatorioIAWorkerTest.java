@@ -8,8 +8,10 @@ import static org.mockito.Mockito.when;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoOutput;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoPort;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
+import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.gestao.api.ConsolidacaoConsumoResponse;
 import br.com.frankcardoso.merenda.gestao.application.ConsolidacaoConsumoService;
+import br.com.frankcardoso.merenda.historico.application.HistoricoConsumoService;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaInput;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaOutput;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaPort;
@@ -48,6 +50,12 @@ class RelatorioIAWorkerTest {
     @Mock
     private PrevisaoConsumoPort previsaoPort;
 
+    @Mock
+    private HistoricoConsumoService historicoService;
+
+    @Mock
+    private AuditoriaConsumoRepository auditoriaRepository;
+
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final Clock clock = Clock.fixed(AGORA, ZoneOffset.UTC);
 
@@ -61,6 +69,7 @@ class RelatorioIAWorkerTest {
             Turno.NOITE,
             UUID.randomUUID(),
             "Arroz, feijao e frango",
+            List.of("arroz", "feijao", "frango"),
             300,
             1,
             3,
@@ -94,6 +103,8 @@ class RelatorioIAWorkerTest {
             consolidacaoService,
             analisePort,
             previsaoPort,
+            historicoService,
+            auditoriaRepository,
             objectMapper,
             clock,
             "gemini",
@@ -119,6 +130,7 @@ class RelatorioIAWorkerTest {
             Turno.NOITE,
             UUID.randomUUID(),
             "Arroz, feijao e frango",
+            List.of("arroz", "feijao", "frango"),
             300,
             1,
             3,
@@ -144,6 +156,8 @@ class RelatorioIAWorkerTest {
             consolidacaoService,
             analisePort,
             previsaoPort,
+            historicoService,
+            auditoriaRepository,
             objectMapper,
             clock,
             "gemini",

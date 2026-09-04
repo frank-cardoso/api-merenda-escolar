@@ -8,7 +8,9 @@ spring:
         chat:
           options:
             model: ${GEMINI_MODEL:gemini-3.6-flash}
-            temperature: 0.2
+            # Zero para o relatorio ser reproduzivel: com 0.2 o modelo citava as
+            # taxas por item em uma execucao e omitia na seguinte, com o mesmo dado.
+            temperature: 0.0
     retry:
       max-attempts: 2
       backoff:
