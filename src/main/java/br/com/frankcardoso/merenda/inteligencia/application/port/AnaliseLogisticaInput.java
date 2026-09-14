@@ -2,7 +2,7 @@ package br.com.frankcardoso.merenda.inteligencia.application.port;
 
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoOutput;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
-import br.com.frankcardoso.merenda.historico.api.HistoricoConsumoResumo;
+import br.com.frankcardoso.merenda.historico.api.ItemHistorico;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -14,8 +14,9 @@ import java.util.List;
  * calculados de proposito: modelo de linguagem erra aritmetica, e mandar pronto evita conta
  * errada na saida.
  *
- * {@code historico} e o que permite a analise ir alem do obvio. Sem ele o modelo recebe um unico
- * ponto de dado e so consegue reafirmar o que ja esta no proprio payload.
+ * {@code itensDoCardapioComTendencia} e o que permite a analise ir alem do obvio: taxa historica
+ * de execucao (Java) e tendencia ao longo do tempo (Python) por item do cardapio de hoje, ja
+ * mastigadas — o modelo nao recebe a serie dia a dia bruta.
  */
 public record AnaliseLogisticaInput(
     LocalDate data,
@@ -29,7 +30,8 @@ public record AnaliseLogisticaInput(
     long sobraEstimada,
     PrevisaoConsumoOutput previsaoConsumo,
     String avisoPrevisaoConsumo,
-    HistoricoConsumoResumo historico
+    List<ItemHistorico> itensComMenorExecucao,
+    List<ItemComTendencia> itensDoCardapioComTendencia
 ) {
 
     public AnaliseLogisticaInput(
@@ -54,7 +56,8 @@ public record AnaliseLogisticaInput(
             sobraEstimada,
             null,
             null,
-            HistoricoConsumoResumo.vazio()
+            List.of(),
+            List.of()
         );
     }
 }

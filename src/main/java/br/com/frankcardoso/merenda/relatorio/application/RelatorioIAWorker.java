@@ -3,13 +3,18 @@ package br.com.frankcardoso.merenda.relatorio.application;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoInput;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoOutput;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoPort;
+import br.com.frankcardoso.merenda.analytics.application.port.TendenciaItemInput;
+import br.com.frankcardoso.merenda.analytics.application.port.TendenciaItemOutput;
+import br.com.frankcardoso.merenda.analytics.application.port.TendenciaItemPort;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.gestao.api.ConsolidacaoConsumoResponse;
 import br.com.frankcardoso.merenda.gestao.application.ConsolidacaoConsumoService;
+import br.com.frankcardoso.merenda.historico.api.ItemHistorico;
 import br.com.frankcardoso.merenda.historico.application.HistoricoConsumoService;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaInput;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaOutput;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaPort;
+import br.com.frankcardoso.merenda.inteligencia.application.port.ItemComTendencia;
 import br.com.frankcardoso.merenda.relatorio.domain.RelatorioIA;
 import br.com.frankcardoso.merenda.relatorio.infrastructure.RelatorioIARepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -18,12 +23,16 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -31,10 +40,13 @@ import org.springframework.stereotype.Component;
 @Component
 public class RelatorioIAWorker {
 
+    private static final Logger LOG = LoggerFactory.getLogger(RelatorioIAWorker.class);
+
     private final RelatorioIARepository repository;
     private final ConsolidacaoConsumoService consolidacaoService;
     private final AnaliseLogisticaPort analisePort;
     private final PrevisaoConsumoPort previsaoPort;
+    private final TendenciaItemPort tendenciaItemPort;
     private final HistoricoConsumoService historicoService;
     private final AuditoriaConsumoRepository auditoriaRepository;
     private final ObjectMapper objectMapper;
@@ -51,6 +63,7 @@ public class RelatorioIAWorker {
         ConsolidacaoConsumoService consolidacaoService,
         AnaliseLogisticaPort analisePort,
         PrevisaoConsumoPort previsaoPort,
+        TendenciaItemPort tendenciaItemPort,
         HistoricoConsumoService historicoService,
         AuditoriaConsumoRepository auditoriaRepository,
         ObjectMapper objectMapper,
@@ -63,6 +76,7 @@ public class RelatorioIAWorker {
         this.consolidacaoService = consolidacaoService;
         this.analisePort = analisePort;
         this.previsaoPort = previsaoPort;
+        this.tendenciaItemPort = tendenciaItemPort;
         this.historicoService = historicoService;
         this.auditoriaRepository = auditoriaRepository;
         this.objectMapper = objectMapper;
@@ -103,6 +117,10 @@ public class RelatorioIAWorker {
         ConsolidacaoConsumoResponse consolidacao,
         ResultadoPrevisao resultadoPrevisao
     ) {
+        var ranking = historicoService.rankingDosPioresItens(consolidacao.data(), consolidacao.turno());
+        var itensComTaxa = historicoService.itensDoCardapioComTaxa(
+            consolidacao.data(), consolidacao.turno(), consolidacao.itensCardapio());
+
         return new AnaliseLogisticaInput(
             consolidacao.data(),
             consolidacao.turno(),
@@ -115,9 +133,46 @@ public class RelatorioIAWorker {
             consolidacao.sobraEstimada(),
             resultadoPrevisao.previsao(),
             resultadoPrevisao.aviso(),
-            historicoService.resumir(consolidacao.data(), consolidacao.turno(),
-                consolidacao.itensCardapio())
+            ranking,
+            itensComTendencia(consolidacao, itensComTaxa)
         );
+    }
+
+    /**
+     * Mescla a taxa historica de cada item do cardapio de hoje (Java) com a tendencia calculada
+     * sobre a serie diaria dessa taxa (Python). Se o servico de tendencia falhar, a analise segue
+     * sem tendencia em vez de falhar por causa de um insumo secundario — mesmo principio do
+     * preverConsumo() para a previsao de demanda.
+     */
+    private List<ItemComTendencia> itensComTendencia(
+        ConsolidacaoConsumoResponse consolidacao,
+        List<ItemHistorico> itensComTaxa
+    ) {
+        if (itensComTaxa.isEmpty()) return List.of();
+
+        Map<String, String> tendenciaPorItem;
+        try {
+            var nomesResolvidos = itensComTaxa.stream().map(ItemHistorico::item).toList();
+            var series = historicoService.serieDiariaDosItens(
+                consolidacao.data(), consolidacao.turno(), nomesResolvidos);
+
+            tendenciaPorItem = tendenciaItemPort.calcular(
+                    series.stream()
+                        .map(serie -> new TendenciaItemInput(serie.item(), serie.taxasExecucao()))
+                        .toList())
+                .stream()
+                .collect(Collectors.toMap(TendenciaItemOutput::item, TendenciaItemOutput::tendencia));
+        } catch (Exception exception) {
+            LOG.warn("Servico de tendencia de itens falhou, seguindo sem tendencia: {}",
+                exception.getMessage());
+            tendenciaPorItem = Map.of();
+        }
+
+        Map<String, String> tendenciaResolvida = tendenciaPorItem;
+        return itensComTaxa.stream()
+            .map(item -> new ItemComTendencia(
+                item.item(), item.taxaExecucao(), tendenciaResolvida.get(item.item())))
+            .toList();
     }
 
     private ResultadoPrevisao preverConsumo(ConsolidacaoConsumoResponse consolidacao) {

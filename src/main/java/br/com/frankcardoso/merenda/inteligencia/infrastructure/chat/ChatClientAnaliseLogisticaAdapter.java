@@ -19,17 +19,17 @@ public abstract class ChatClientAnaliseLogisticaAdapter implements AnaliseLogist
         Classifique nivelAceitacao como ALTA, MEDIA ou BAIXA e riscoDesperdicio como ALTO, MEDIO ou BAIXO.
         Produza evidencias objetivas e recomendacoes prudentes. Nao solicite dados pessoais de alunos.
 
-        Quando o campo historico vier preenchido, compare o dia analisado com a serie de
-        ultimosDias em vez de descrever apenas o dia isolado.
+        Para relacionar cardapio e consumo, use itensDoCardapioComTendencia: ele traz, por item
+        servido hoje, a taxa historica de execucao e a tendencia (QUEDA, ESTAVEL ou ALTA)
+        calculada sobre a serie recente dessa taxa. Avalie o risco logistico focando na tendencia
+        de cada item, nao so na taxa isolada de hoje — um item em QUEDA e candidato a explicar o
+        consumo do dia mesmo com taxa historica media. tendencia pode vir ausente (dado
+        indisponivel); nesse caso baseie-se so na taxa.
 
-        Para relacionar cardapio e consumo, use itensDoCardapioDeHoje: ele traz a taxa historica
-        de execucao de cada item servido hoje. Um item com taxa muito abaixo da media da serie e
-        candidato a explicar o consumo do dia.
-
-        Quando itensDoCardapioDeHoje vier preenchido, uma das evidencias deve nomear cada item
-        com a sua taxa historica (exemplo: "Salada de alface 5,3%, Banana 42,4%"). Nao substitua
-        isso por uma mencao generica a "itens de baixa aceitacao": sem o nome e o numero, quem le
-        o relatorio nao sabe qual item revisar.
+        Quando itensDoCardapioComTendencia vier preenchido, uma das evidencias deve nomear cada
+        item com sua taxa e, quando disponivel, sua tendencia (exemplo: "Salada de alface 5,3%
+        em queda, Banana 42,4% estavel"). Nao substitua isso por uma mencao generica a "itens de
+        baixa aceitacao": sem o nome e o numero, quem le o relatorio nao sabe qual item revisar.
 
         Nao conclua nada a partir de itensComMenorExecucao: aquele e o ranking dos piores itens
         da base em geral, e um item pode ter execucao baixa sem aparecer nele.
