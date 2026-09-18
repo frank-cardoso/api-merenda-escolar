@@ -1,6 +1,7 @@
 package br.com.frankcardoso.merenda.inteligencia.application.port;
 
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoOutput;
+import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticos;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.historico.api.ItemHistorico;
 import java.math.BigDecimal;
@@ -31,7 +32,8 @@ public record AnaliseLogisticaInput(
     PrevisaoConsumoOutput previsaoConsumo,
     String avisoPrevisaoConsumo,
     List<ItemHistorico> itensComMenorExecucao,
-    List<ItemComTendencia> itensDoCardapioComTendencia
+    List<ItemComTendencia> itensDoCardapioComTendencia,
+    IndicadoresLogisticos indicadores
 ) {
 
     public AnaliseLogisticaInput(
@@ -57,7 +59,8 @@ public record AnaliseLogisticaInput(
             null,
             null,
             List.of(),
-            List.of()
+            List.of(),
+            null
         );
     }
 }

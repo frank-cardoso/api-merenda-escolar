@@ -1,6 +1,7 @@
 package br.com.frankcardoso.merenda.relatorio.application;
 
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoInput;
+import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticos;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoOutput;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoPort;
 import br.com.frankcardoso.merenda.analytics.application.port.TendenciaItemInput;
@@ -9,6 +10,7 @@ import br.com.frankcardoso.merenda.analytics.application.port.TendenciaItemPort;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.gestao.api.ConsolidacaoConsumoResponse;
 import br.com.frankcardoso.merenda.gestao.application.ConsolidacaoConsumoService;
+import br.com.frankcardoso.merenda.gestao.application.IndicadoresLogisticosService;
 import br.com.frankcardoso.merenda.historico.api.ItemHistorico;
 import br.com.frankcardoso.merenda.historico.application.HistoricoConsumoService;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaInput;
@@ -22,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -54,6 +57,7 @@ public class RelatorioIAWorker {
     private final String provedor;
     private final String modelo;
     private final Duration timeoutAnaliseIA;
+    private final IndicadoresLogisticosService indicadoresService;
 
     /** Vinte dias uteis cobrem cerca de um mes e ja dao confianca ALTA na previsao. */
     private static final int DIAS_DE_HISTORICO_NA_PREVISAO = 20;
@@ -70,7 +74,8 @@ public class RelatorioIAWorker {
         Clock clock,
         @Value("${merenda.ia.provedor:fake}") String provedor,
         @Value("${merenda.ia.modelo:regras-locais-v1}") String modelo,
-        @Value("${merenda.ia.timeout-segundos:30}") long timeoutSegundos
+        @Value("${merenda.ia.timeout-segundos:30}") long timeoutSegundos,
+        IndicadoresLogisticosService indicadoresService
     ) {
         this.repository = repository;
         this.consolidacaoService = consolidacaoService;
@@ -84,6 +89,7 @@ public class RelatorioIAWorker {
         this.provedor = provedor;
         this.modelo = modelo;
         this.timeoutAnaliseIA = Duration.ofSeconds(timeoutSegundos);
+        this.indicadoresService = indicadoresService;
     }
 
     @Async("relatorioExecutor")
@@ -94,7 +100,11 @@ public class RelatorioIAWorker {
         try {
             ConsolidacaoConsumoResponse consolidacao = consolidacaoService.consolidar(
                 relatorio.getDataReferencia(), relatorio.getTurno());
-            AnaliseLogisticaInput input = criarInput(consolidacao, preverConsumo(consolidacao));
+            var indicadores = indicadoresService.calcular(consolidacao.data(), consolidacao.turno());
+            consolidacao = alinharConsolidacaoAFotografia(consolidacao, indicadores);
+            AnaliseLogisticaInput input = criarInput(consolidacao, preverConsumo(consolidacao), indicadores);
+
+            relatorio.registrarIndicadores(escreverJson(input.indicadores()));
 
             relatorio.iniciar(provedor, modelo, escreverJson(input), Instant.now(clock));
             relatorio = repository.saveAndFlush(relatorio);
@@ -103,6 +113,7 @@ public class RelatorioIAWorker {
             if (resultado.saida() == null) {
                 throw new IllegalStateException("O provedor de IA retornou resposta vazia");
             }
+            resultado.saida().validar();
 
             relatorio.concluir(resultado.provedor(), resultado.modelo(), escreverJson(resultado.saida()),
                 resultado.saida().resumoExecutivo(), Instant.now(clock));
@@ -115,7 +126,8 @@ public class RelatorioIAWorker {
 
     private AnaliseLogisticaInput criarInput(
         ConsolidacaoConsumoResponse consolidacao,
-        ResultadoPrevisao resultadoPrevisao
+        ResultadoPrevisao resultadoPrevisao,
+        IndicadoresLogisticos indicadores
     ) {
         var ranking = historicoService.rankingDosPioresItens(consolidacao.data(), consolidacao.turno());
         var itensComTaxa = historicoService.itensDoCardapioComTaxa(
@@ -134,8 +146,22 @@ public class RelatorioIAWorker {
             resultadoPrevisao.previsao(),
             resultadoPrevisao.aviso(),
             ranking,
-            itensComTendencia(consolidacao, itensComTaxa)
+            itensComTendencia(consolidacao, itensComTaxa),
+            indicadores
         );
+    }
+
+    // A fila pode avançar enquanto as consultas são feitas. A fotografia prevalece também
+    // nos campos legados enviados à previsão/LLM, para não enviar duas contagens diferentes.
+    private ConsolidacaoConsumoResponse alinharConsolidacaoAFotografia(
+        ConsolidacaoConsumoResponse original, IndicadoresLogisticos indicadores) {
+        if (indicadores == null || indicadores.execucaoPlanejamento() == null) return original;
+        var execucao = indicadores.execucaoPlanejamento();
+        return new ConsolidacaoConsumoResponse(original.data(), original.turno(), original.cardapioId(),
+            original.cardapio(), original.itensCardapio(), Math.toIntExact(execucao.refeicoesPlanejadas()),
+            execucao.consumosRegistrados(), original.tentativasBloqueadas(),
+            execucao.percentual() == null ? BigDecimal.ZERO : execucao.percentual(),
+            Math.max(0, execucao.refeicoesPlanejadas() - execucao.consumosRegistrados()));
     }
 
     /**

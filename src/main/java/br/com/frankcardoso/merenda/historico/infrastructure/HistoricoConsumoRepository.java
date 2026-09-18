@@ -11,6 +11,25 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface HistoricoConsumoRepository extends JpaRepository<HistoricoConsumo, UUID> {
+    @Query("""
+        SELECT h.item AS item, h.origem AS origem, h.escolaId AS escola,
+               COUNT(h) AS planejamentos, COUNT(h.quantidadeServida) AS execucoes
+        FROM HistoricoConsumo h
+        WHERE h.turno = :turno AND h.data >= :inicio AND h.data <= :fim
+        GROUP BY h.item, h.origem, h.escolaId
+        ORDER BY h.item, h.origem, h.escolaId
+        """)
+    List<ExecucaoItem> execucoesNaJanela(@Param("inicio") LocalDate inicio,
+        @Param("fim") LocalDate fim, @Param("turno") Turno turno);
+
+    interface ExecucaoItem {
+        String getItem();
+        String getOrigem();
+        int getEscola();
+        long getPlanejamentos();
+        long getExecucoes();
+    }
+
 
     /**
      * Taxa de execucao por item: com que frequencia um item planejado teve execucao lancada.

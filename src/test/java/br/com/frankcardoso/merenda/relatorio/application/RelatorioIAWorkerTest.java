@@ -64,11 +64,14 @@ class RelatorioIAWorkerTest {
     @Mock
     private AuditoriaConsumoRepository auditoriaRepository;
 
+    @Mock
+    private br.com.frankcardoso.merenda.gestao.application.IndicadoresLogisticosService indicadoresService;
+
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final Clock clock = Clock.fixed(AGORA, ZoneOffset.UTC);
 
     @Test
-    void deveUsarPrevisaoDoPythonComoInsumoDaAnaliseComIa() {
+    void deveUsarPrevisaoDoPythonComoInsumoDaAnaliseComIa() throws Exception {
         var relatorioId = UUID.randomUUID();
         var data = LocalDate.of(2026, 8, 26);
         var relatorio = RelatorioIA.pendente(data, Turno.NOITE, AGORA);
@@ -96,6 +99,16 @@ class RelatorioIAWorkerTest {
         when(repository.findById(relatorioId)).thenReturn(Optional.of(relatorio));
         when(consolidacaoService.consolidar(data, Turno.NOITE)).thenReturn(consolidacao);
         when(previsaoPort.prever(any())).thenReturn(previsao);
+        // A fila recebeu outro consumo entre a primeira consulta e a fotografia de indicadores.
+        var indicadores = objectMapper.readValue("""
+            {"schemaVersion":"2","calculoVersao":"indicadores-v1","status":"DISPONIVEL",
+             "dataReferencia":"2026-08-26","inicioHistorico":"2026-07-28","turno":"NOITE",
+             "execucaoPlanejamento":{"refeicoesPlanejadas":300,"consumosRegistrados":2,
+              "percentual":0.67,"metaPercentual":80,"diferencaMetaPp":-79.33,"statusMeta":"ABAIXO"},
+             "atendimentos":{"alunosUnicos":2,"repeticoes":0},
+             "topComidas":[],"porTurma":[],"avisos":[]}
+            """, br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticos.class);
+        when(indicadoresService.calcular(data, Turno.NOITE)).thenReturn(indicadores);
         when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(analisePort.analisar(any())).thenReturn(new AnaliseLogisticaOutput(
             "Resumo",
@@ -118,7 +131,7 @@ class RelatorioIAWorkerTest {
             clock,
             "gemini",
             "gemini-3.6-flash",
-            30
+            30, indicadoresService
         );
 
         worker.processar(relatorioId);
@@ -127,6 +140,11 @@ class RelatorioIAWorkerTest {
         verify(analisePort).analisar(captor.capture());
         assertThat(captor.getValue().previsaoConsumo()).isEqualTo(previsao);
         assertThat(captor.getValue().avisoPrevisaoConsumo()).isNull();
+        assertThat(captor.getValue().consumosAutorizados()).isEqualTo(2);
+        assertThat(captor.getValue().taxaConsumoPlanejado()).isEqualByComparingTo("0.67");
+        assertThat(captor.getValue().sobraEstimada()).isEqualTo(298);
+        assertThat(objectMapper.readTree(relatorio.getIndicadoresJson())
+            .path("execucaoPlanejamento").path("consumosRegistrados").asLong()).isEqualTo(2);
     }
 
     @Test
@@ -172,7 +190,7 @@ class RelatorioIAWorkerTest {
             clock,
             "gemini",
             "gemini-3.6-flash",
-            30
+            30, indicadoresService
         );
 
         worker.processar(relatorioId);
@@ -223,7 +241,7 @@ class RelatorioIAWorkerTest {
         var worker = new RelatorioIAWorker(
             repository, consolidacaoService, analisePort, previsaoPort, tendenciaItemPort,
             historicoService, auditoriaRepository, objectMapper, clock,
-            "gemini", "gemini-3.6-flash", 30
+            "gemini", "gemini-3.6-flash", 30, indicadoresService
         );
 
         worker.processar(relatorioId);
@@ -265,7 +283,7 @@ class RelatorioIAWorkerTest {
         var worker = new RelatorioIAWorker(
             repository, consolidacaoService, analisePort, previsaoPort, tendenciaItemPort,
             historicoService, auditoriaRepository, objectMapper, clock,
-            "gemini", "gemini-3.6-flash", 30
+            "gemini", "gemini-3.6-flash", 30, indicadoresService
         );
 
         worker.processar(relatorioId);

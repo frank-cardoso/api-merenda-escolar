@@ -13,13 +13,13 @@ class FakeAnaliseLogisticaAdapterTest {
     private final FakeAnaliseLogisticaAdapter adapter = new FakeAnaliseLogisticaAdapter();
 
     @Test
-    void deveClassificarBaixaAceitacaoComoAltoRiscoDeDesperdicio() {
+    void naoDeveInventarAceitacaoAPartirDeAutorizacoesDeConsumo() {
         var input = new AnaliseLogisticaInput(LocalDate.of(2026, 8, 26), Turno.TARDE,
             "Sopa de legumes", 200, 80, 3, new BigDecimal("40.00"), 120);
 
         var resultado = adapter.analisar(input);
 
-        assertThat(resultado.nivelAceitacao()).isEqualTo("BAIXA");
+        assertThat(resultado.nivelAceitacao()).isEqualTo("NAO_AVALIAVEL");
         assertThat(resultado.riscoDesperdicio()).isEqualTo("ALTO");
         assertThat(resultado.evidencias()).hasSize(2);
     }

@@ -36,6 +36,10 @@ springdoc:
     path: /swagger-ui.html
 
 merenda:
+  gestao:
+    meta-execucao-percentual: 80
+  fila:
+    bloqueio-repeticao: 2m
   ia:
     provedor: fake
     modelo: regras-locais-v1

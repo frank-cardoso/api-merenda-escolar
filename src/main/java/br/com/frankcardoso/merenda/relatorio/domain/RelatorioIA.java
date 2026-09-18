@@ -45,6 +45,9 @@ public class RelatorioIA {
     @Column(name = "resultado_json", columnDefinition = "CHARACTER LARGE OBJECT")
     private String resultadoJson;
 
+    @Column(name = "indicadores_json", columnDefinition = "CHARACTER LARGE OBJECT")
+    private String indicadoresJson;
+
     @Column(columnDefinition = "CHARACTER LARGE OBJECT")
     private String resumo;
 
@@ -76,7 +79,7 @@ public class RelatorioIA {
         relatorio.dataReferencia = data;
         relatorio.turno = turno;
         relatorio.status = StatusRelatorioIA.PENDENTE;
-        relatorio.promptVersao = "v1";
+        relatorio.promptVersao = "v2-indicadores";
         relatorio.tentativas = 0;
         relatorio.criadoEm = agora;
         return relatorio;
@@ -111,6 +114,15 @@ public class RelatorioIA {
         this.erro = erro;
         this.concluidoEm = agora;
     }
+
+    public void registrarIndicadores(String json) {
+        if (status == StatusRelatorioIA.CONCLUIDO) {
+            throw new IllegalStateException("Fotografia de relatório concluído não pode ser alterada");
+        }
+        this.indicadoresJson = json;
+    }
+
+    public String getIndicadoresJson() { return indicadoresJson; }
 
     private void exigirProcessando() {
         if (status != StatusRelatorioIA.PROCESSANDO) {

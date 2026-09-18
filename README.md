@@ -9,6 +9,8 @@ Backend do prototipo academico de Controle de Merenda Escolar, desenvolvido com 
 
 A integracao com IA permanece isolada atras de uma porta de aplicacao. Ela nao participa e nao pode ser dependencia do fluxo da fila.
 
+Na fila, a repeticao do mesmo aluno no mesmo turno fica bloqueada por uma janela configuravel de 2 minutos. Depois desse intervalo, o mesmo aluno pode validar novamente no turno atual. A configuracao padrao fica em `merenda.fila.bloqueio-repeticao`.
+
 ## Execucao local
 
 Pre-requisitos:
@@ -150,3 +152,38 @@ GET /api/v1/relatorios-ia/{relatorioId}
 Os estados persistidos sao `PENDENTE`, `PROCESSANDO`, `CONCLUIDO` e `FALHOU`. O processamento ocorre em executor separado e nao compartilha o caminho critico da fila.
 
 Consulte [implementation_plan.md](implementation_plan.md) para o roteiro completo.
+
+## Dashboard logístico — indicadores v2
+
+Atualize e reinicie também o serviço Python antes de testar esta versão. O cálculo novo usa
+`POST /api/v1/indicadores-logisticos` no Python; não chama o Gemini e não exige chave de IA.
+
+- `GET /api/v1/gestao/indicadores?data=2026-09-17&turno=MANHA`: indicadores do dia e ranking histórico dos últimos 30 dias (inclusive a data de referência).
+- `GET /api/v1/relatorios-ia?data=2026-09-17&turno=MANHA`: últimos 20 relatórios do filtro, mais recentes primeiro.
+- `GET /api/v1/relatorios-ia/{id}`: inclui `indicadores`, a fotografia persistida usada no relatório; consultas não recalculam nem chamam IA.
+
+A migration V5 adiciona `relatorio_ia.indicadores_json`. Relatórios anteriores continuam
+consultáveis e retornam `indicadores: null`. Relatórios novos usam `promptVersao=v2-indicadores`.
+O prompt compartilhado por Gemini/Groq está em
+`inteligencia/infrastructure/chat/ChatClientAnaliseLogisticaAdapter.java`.
+
+Configure a meta interna em `merenda.gestao.meta-execucao-percentual` (padrão 80, entre 0 e 100).
+Ela mede autorizações de consumo / refeições planejadas, não aceitação sensorial nem desperdício
+medido. Repetições e alunos únicos são separados por dia/turno. O percentual pode superar 100;
+quando o planejamento é zero, o indicador é não avaliável, não zero.
+
+O ranking inicial é de **execução registrada de itens**, com no mínimo 5 planejamentos.
+Registros históricos com quantidade zero contam como execução registrada, enquanto quantidade
+nula é ausência de registro. O ranking informa escolas e origens e não deve ser confundido
+com a demanda da fila local. Dados `FAKE`/sintéticos continuam identificados pelas origens.
+Para outras escolas, o próximo passo é modelar escola na fila e filtrar ambos os conjuntos.
+
+Turmas exibem alunos/consumos/repetições pela turma **atual** do cadastro, apenas para turmas
+com atendimentos. Percentuais de adesão e metas por turma permanecem não avaliáveis até haver
+presença elegível e histórico de vínculo. Ingredientes e rotação retornam `DADOS_INSUFICIENTES`:
+faltam composição de receitas e séries comparáveis; nenhum ciclo de 15/30 dias é inventado.
+
+Se o Python falhar, o endpoint retorna `status=INDISPONIVEL`, indicadores nulos e aviso seguro.
+O relatório continua com as informações disponíveis. A fila não depende dessa integração.
+Respostas de IA são validadas estruturalmente (campos e classificações); isso não garante
+veracidade da narrativa. Números do dashboard nunca vêm da resposta do LLM.

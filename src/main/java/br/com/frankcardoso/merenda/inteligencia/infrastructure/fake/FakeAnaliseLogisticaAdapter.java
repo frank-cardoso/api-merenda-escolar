@@ -24,28 +24,27 @@ public class FakeAnaliseLogisticaAdapter implements AnaliseLogisticaPort {
 
     @Override
     public AnaliseLogisticaOutput analisar(AnaliseLogisticaInput input) {
-        var aceitacao = classificarAceitacao(input.taxaConsumoPlanejado());
         var risco = classificarRisco(input.taxaConsumoPlanejado());
+        var execucao = input.indicadores() == null ? null : input.indicadores().execucaoPlanejamento();
+        var resumo = execucao == null || execucao.percentual() == null
+            ? "Não foi possível avaliar a meta de execução com os indicadores disponíveis."
+            : "Execução registrada de %s%% para a meta interna de %s%%: %s.".formatted(
+                execucao.percentual(), execucao.metaPercentual(), execucao.statusMeta());
 
         return new AnaliseLogisticaOutput(
-            "O cardapio apresentou aceitacao %s e risco de desperdicio %s.".formatted(
-                aceitacao.toLowerCase(), risco.toLowerCase()),
-            aceitacao,
-            risco,
+            resumo,
+            "NAO_AVALIAVEL",
+            input.quantidadePlanejada() == 0 ? "NAO_AVALIAVEL" : risco,
             List.of(
-                "Foram servidas %d de %d refeicoes planejadas.".formatted(
+                "Foram registrados %d consumos para %d refeições planejadas.".formatted(
                     input.consumosAutorizados(), input.quantidadePlanejada()),
-                "A sobra estimada foi de %d refeicoes.".formatted(input.sobraEstimada())
+                "A diferença positiva entre planejamento e registros é %d; não é desperdício medido."
+                    .formatted(input.sobraEstimada())
             ),
             List.of("Ajustar gradualmente o planejamento usando a media dos ultimos dias."),
-            "Analise demonstrativa gerada sem consulta a um modelo externo."
+            "Análise demonstrativa sem modelo externo. QR Code não mede aceitação; sem presença "
+                + "não se avalia adesão por turma. Ingredientes e rotação exigem dados adicionais."
         );
-    }
-
-    private String classificarAceitacao(BigDecimal taxa) {
-        if (taxa.compareTo(BigDecimal.valueOf(85)) >= 0) return "ALTA";
-        if (taxa.compareTo(BigDecimal.valueOf(60)) >= 0) return "MEDIA";
-        return "BAIXA";
     }
 
     private String classificarRisco(BigDecimal taxa) {

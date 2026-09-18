@@ -1,0 +1,1 @@
+ALTER TABLE relatorio_ia ADD COLUMN indicadores_json CHARACTER LARGE OBJECT;

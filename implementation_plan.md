@@ -38,7 +38,7 @@ Bloqueios de negocio retornam HTTP 200 com sinal vermelho. Entradas invalidas e 
 ## Fases
 
 1. Scaffolding, H2, Flyway, OpenAPI e dados fake.
-2. Regra transacional de consumo unico e fila com QR Code.
+2. Regra transacional de bloqueio temporario por aluno no turno e fila com QR Code.
 3. Cadastro e reconhecimento facial local no navegador.
 4. Consolidacao deterministica e dashboard gerencial.
 5. Job persistido, adapter fake e integracao Gemini free tier. **Fundacao implementada:** consolidacao, estados do job, porta de IA, adapter fake e adapter Gemini com saida estruturada.
@@ -46,7 +46,7 @@ Bloqueios de negocio retornam HTTP 200 com sinal vermelho. Entradas invalidas e 
 
 ## Criterios de aceite
 
-- A primeira leitura autoriza e a segunda no mesmo turno bloqueia.
+- A primeira leitura autoriza, uma repeticao dentro de 2 minutos no mesmo turno bloqueia e uma nova leitura apos a janela configurada autoriza novamente.
 - Requisicoes concorrentes produzem exatamente um consumo autorizado.
 - QR e face usam o mesmo endpoint e a mesma regra.
 - Nenhuma indisponibilidade da IA afeta a fila.
