@@ -69,6 +69,17 @@ public class Cardapio {
      * Marca o cardapio como inativo em vez de remove-lo. A linha continua existindo porque
      * auditoria_consumo referencia o cardapio servido e esse historico nao pode ser perdido.
      */
+    /**
+     * Preenche o vinculo com o catalogo de receitas sem mexer no resto do cardapio.
+     *
+     * Existe so para o backfill unico da V7: cardapios gravados antes dela tem item sem
+     * receitaId. Nao passa por exigirAtivo() de proposito — cardapio desativado guarda historico
+     * e tambem precisa do vinculo se um dia for reativado.
+     */
+    public void vincularReceitas(String itensJson) {
+        this.itensJson = itensJson;
+    }
+
     public void desativar() {
         exigirAtivo();
         this.ativo = false;

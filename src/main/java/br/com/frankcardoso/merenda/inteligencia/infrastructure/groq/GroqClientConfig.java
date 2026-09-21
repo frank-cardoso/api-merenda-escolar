@@ -44,11 +44,15 @@ public class GroqClientConfig {
     OpenAiChatModel groqChatModel(
         OpenAiApi groqApi,
         RetryTemplate retryTemplate,
-        @Value("${merenda.ia.fallback.modelo:openai/gpt-oss-20b}") String modelo
+        @Value("${merenda.ia.fallback.modelo:openai/gpt-oss-20b}") String modelo,
+        @Value("${merenda.ia.fallback.max-tokens:4096}") int teto
     ) {
         var options = OpenAiChatOptions.builder()
             .model(modelo)
             .temperature(0.0) // relatorio precisa ser reproduzivel para o mesmo dado
+            // Ver o comentario em application-gemini.yml: sem teto explicito, a resposta chegava
+            // cortada no meio do JSON quando o raciocinio do modelo comia a cota da saida.
+            .maxCompletionTokens(teto)
             .build();
 
         return OpenAiChatModel.builder()
