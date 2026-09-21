@@ -33,9 +33,9 @@ Persistidos hoje:
 - `HistoricoConsumo`: um registro por (data, turno, escola, refeicao, receita), no mesmo grao do legado. Sintetico, gerado por `scripts/gerar_historico_fake.py`.
 - `MedicaoSobra`: sobra medida por (data, turno, escola, receita), em porcoes. Guarda `sobra_nao_distribuida` e `resto_no_prato` separados — so a segunda mede rejeicao.
 
-Previsto no desenho, ainda nao implementado:
+Fora de escopo (ver "Identificacao" abaixo):
 
-- `BiometriaFacial`: descriptor facial, versao do modelo e registro de consentimento; fotografias nao seriam persistidas.
+- `BiometriaFacial`: descriptor facial, versao do modelo e registro de consentimento. Nao foi implementado e nao sera.
 
 DTOs e contratos imutaveis usam records. Entidades JPA permanecem classes. Datas operacionais usam `LocalDate`, instantes usam `Instant` e enums sao persistidos como texto.
 
@@ -56,17 +56,36 @@ Implementados:
 Previstos no desenho, ainda nao implementados:
 
 - `GET|POST|PUT /api/v1/alunos`: cadastro e consulta.
-- `PUT /api/v1/alunos/{id}/biometria`: cadastro do descriptor.
 - `GET /api/v1/consumos`: consulta da auditoria.
 - `POST /api/v1/relatorios-ia/{id}/reprocessamentos`: reprocessa falhas.
 
 Bloqueios de negocio retornam HTTP 200 com sinal vermelho. Entradas invalidas e falhas tecnicas usam `ProblemDetail`.
 
+## Identificacao
+
+A fila identifica por QR Code. Reconhecimento facial esta fora de escopo, por tres razoes:
+
+1. **A plataforma esta aposentando o servico de reconhecimento em nuvem** (`attendance-api` mais
+   `educacao-attendance-worker`) por qualidade insuficiente. Isso e evidencia sobre a dificuldade do
+   problema, nao apenas sobre aquela implementacao: identificar crianca em fila, com luz e movimento
+   variando, e difícil.
+2. **O caminho da casa para identificacao biometrica e hardware dedicado** — `betha-bio-sdk`,
+   agente standalone para dispositivos ZK e Intelbras iFace, com luz controlada e matching local.
+   Terminal proprio resolve melhor que camera de tablet.
+3. **Fazer no navegador sairia pior.** O plano original previa `face-api.js`, biblioteca de 2020 sem
+   manutencao, rodando no dispositivo que a escola tiver — abaixo do servico que esta sendo
+   desligado por nao ser bom o suficiente.
+
+A dependencia `face-api.js` foi removida do frontend; ela estava declarada e nunca importada.
+
+O diferencial deste prototipo e a medicao e a analise, nao a identificacao. Identificacao ja esta
+resolvida (QR) ou e problema de hardware.
+
 ## Fases
 
 1. Scaffolding, H2, Flyway, OpenAPI e dados fake.
 2. Regra transacional de bloqueio temporario por aluno no turno e fila com QR Code.
-3. Cadastro e reconhecimento facial local no navegador.
+3. ~~Cadastro e reconhecimento facial local no navegador.~~ **Descartada** — ver "Identificacao".
 4. Consolidacao deterministica e dashboard gerencial.
 5. Job persistido, adapter fake e integracao Gemini free tier. **Implementado:** consolidacao, estados do job, porta de IA, adapter fake, adapter Gemini com saida estruturada e fallback para Groq.
 6. Historico sintetico, indicadores deterministas no servico Python e separacao entre o que o modelo redige e o que o codigo crava. **Implementado.**
@@ -78,7 +97,6 @@ Bloqueios de negocio retornam HTTP 200 com sinal vermelho. Entradas invalidas e 
 
 - A primeira leitura autoriza, uma repeticao dentro de 2 minutos no mesmo turno bloqueia e uma nova leitura apos a janela configurada autoriza novamente.
 - Requisicoes concorrentes produzem exatamente um consumo autorizado.
-- QR e face usam o mesmo endpoint e a mesma regra.
 - Nenhuma indisponibilidade da IA afeta a fila.
 - O LLM recebe somente dados agregados.
 - O dashboard reproduz os dados persistidos.

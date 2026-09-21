@@ -344,7 +344,29 @@ ingrediente destacado.
 `INGREDIENTES_NO_RANKING = 3`: a conclusao deterministica cita os tres primeiros, mandar dez ao
 modelo era janela de contexto gasta com ingrediente que ninguem menciona.
 
-## 8. Proximos passos identificados
+## 8. Identificacao fica no QR Code
+
+A plataforma esta aposentando o reconhecimento facial em nuvem (`attendance-api` mais
+`educacao-attendance-worker`) por qualidade insuficiente. O `plan.md` do legado ja registrava
+"sinalizacao de descontinuacao por problemas operacionais", e o caminho da casa para biometria
+passou a ser hardware dedicado: `betha-bio-sdk`, agente standalone para dispositivos ZK e Intelbras
+iFace.
+
+Isso descarta a fase 3 do plano ("cadastro e reconhecimento facial local no navegador"). O motivo
+nao e so evitar duplicar trabalho: se um servico em nuvem esta sendo desligado por nao ser bom o
+suficiente, fazer o mesmo em `face-api.js` 0.22.2 no dispositivo que a escola tiver sai pior. A
+dependencia estava declarada no frontend e nunca foi importada; foi removida.
+
+Registro de leitura errada minha, para nao repetir: eu tinha concluido que o worker **nao** estava
+descontinuado, porque encontrei branch ativa (`ED-40538`) com commits recentes. Os commits eram
+`remove instrumentacao de diagnostico` e `anota Fenomeno B aberto` — triagem de um sistema com
+defeito, nao investimento nele. Atividade de commit nao distingue manutencao de evolucao.
+
+Um dos defeitos abertos vale registro por ser de isolamento entre tenants: o `estabelecimentoId`
+chega de um header `App-Context` sem validacao contra o tenant, e alguns tenants mandam id que nao
+existe no schema (TODO no proprio `AttendanceLotProcess`).
+
+## 9. Proximos passos identificados
 
 ### Resolvidos desde a primeira versao deste documento
 
