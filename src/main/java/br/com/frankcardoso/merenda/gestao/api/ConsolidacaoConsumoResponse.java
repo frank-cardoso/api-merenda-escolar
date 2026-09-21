@@ -12,6 +12,7 @@ public record ConsolidacaoConsumoResponse(
     UUID cardapioId,
     String cardapio,
     List<String> itensCardapio,
+    List<UUID> receitasCardapio,
     int quantidadePlanejada,
     long consumosAutorizados,
     long tentativasBloqueadas,

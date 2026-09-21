@@ -9,9 +9,8 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
+import java.util.UUID;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +20,10 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * Deliberadamente compacto: o objetivo e dar contexto suficiente para o modelo comparar o dia
  * analisado com o passado, sem inflar o prompt com centenas de linhas.
+ *
+ * Todo casamento de item e por id. A versao anterior comparava nome normalizado, com substring nos
+ * dois sentidos, porque o cardapio era texto livre — o que fazia "Arroz" casar tanto com "Arroz
+ * branco" quanto com "Arroz com galinha". Com o cardapio referenciando receita, o filtro e exato.
  */
 @Service
 public class HistoricoConsumoService {
@@ -36,10 +39,10 @@ public class HistoricoConsumoService {
     }
 
     /**
-     * Ranking global dos itens de pior execucao. E o recorte que permite correlacionar prato com
-     * aceitacao, mas nao responde a pergunta util de um cardapio especifico: um item de execucao
-     * baixa pode nao estar entre os dez piores e ainda assim explicar o consumo de hoje — para
-     * isso existe {@link #itensDoCardapioComTaxa}.
+     * Ranking global das receitas de pior execucao. E o recorte que permite correlacionar prato com
+     * aceitacao, mas nao responde a pergunta util de um cardapio especifico: uma receita de
+     * execucao baixa pode nao estar entre as dez piores e ainda assim explicar o consumo de hoje —
+     * para isso existe {@link #itensDoCardapioComTaxa}.
      */
     @Transactional(readOnly = true)
     public List<ItemHistorico> rankingDosPioresItens(LocalDate dataReferencia, Turno turno) {
@@ -54,64 +57,42 @@ public class HistoricoConsumoService {
             .toList();
     }
 
-    /**
-     * Taxa historica de execucao dos itens do cardapio do dia.
-     *
-     * O casamento e feito em Java, nao em SQL, porque o nome cadastrado no cardapio nem sempre
-     * bate exatamente com o nome do legado ("arroz" cadastrado a mao vs "Arroz branco" do
-     * historico) — string igual ignorando caixa/acento/espaco, ou contida uma na outra, e o
-     * suficiente para os casos observados; nomes sem nenhuma relacao textual (ex.: "peixe" quando
-     * nao ha prato de peixe no historico) continuam sem correspondencia, corretamente.
-     */
+    /** Taxa historica de execucao das receitas do cardapio do dia. */
     @Transactional(readOnly = true)
     public List<ItemHistorico> itensDoCardapioComTaxa(LocalDate dataReferencia, Turno turno,
-                                                       List<String> itensDoCardapio) {
-        if (itensDoCardapio.isEmpty()) return List.of();
+                                                       List<UUID> receitasDoCardapio) {
+        if (receitasDoCardapio.isEmpty()) return List.of();
 
-        return repository.taxaPorTodosOsItens(turno, dataReferencia).stream()
-            .filter(agregado -> correspondeAoCardapio(agregado.getItem(), itensDoCardapio))
+        return repository.taxaPorReceitas(turno, dataReferencia, receitasDoCardapio).stream()
             .map(this::paraItem)
             .toList();
     }
 
     /**
-     * Serie diaria de taxa de execucao dos itens ja resolvidos (nomes reais do historico, nao os
-     * do cardapio) — usada pelo calculo de tendencia no servico Python.
+     * Serie diaria de taxa de execucao das receitas informadas — usada pelo calculo de tendencia
+     * no servico Python.
      */
     @Transactional(readOnly = true)
     public List<SerieItemHistorico> serieDiariaDosItens(LocalDate dataReferencia, Turno turno,
-                                                        List<String> itensResolvidos) {
-        if (itensResolvidos.isEmpty()) return List.of();
+                                                        List<UUID> receitas) {
+        if (receitas.isEmpty()) return List.of();
 
-        return repository.serieDiariaPorItem(turno, dataReferencia, itensResolvidos).stream()
+        return repository.serieDiariaPorReceita(turno, dataReferencia, receitas).stream()
             .collect(Collectors.groupingBy(
-                HistoricoConsumoRepository.ItemDiaAgregado::getItem,
+                HistoricoConsumoRepository.ItemDiaAgregado::getReceitaId,
                 LinkedHashMap::new,
                 Collectors.toList()))
-            .entrySet().stream()
-            .map(entrada -> new SerieItemHistorico(
-                entrada.getKey(),
-                entrada.getValue().stream()
-                    .map(dia -> percentual(dia.getServido(), dia.getPlanejado()))
-                    .toList()))
+            .values().stream()
+            .map(dias -> new SerieItemHistorico(
+                dias.getFirst().getReceitaId(),
+                dias.getFirst().getItem(),
+                dias.stream().map(dia -> percentual(dia.getServido(), dia.getPlanejado())).toList()))
             .toList();
-    }
-
-    private boolean correspondeAoCardapio(String itemHistorico, List<String> itensDoCardapio) {
-        String normalizado = normalizar(itemHistorico);
-        return itensDoCardapio.stream()
-            .map(this::normalizar)
-            .anyMatch(itemCardapio -> normalizado.equals(itemCardapio)
-                || normalizado.contains(itemCardapio)
-                || itemCardapio.contains(normalizado));
-    }
-
-    private String normalizar(String texto) {
-        return StringUtils.stripAccents(texto).trim().toLowerCase(Locale.ROOT);
     }
 
     private ItemHistorico paraItem(HistoricoConsumoRepository.ItemAgregado agregado) {
         return new ItemHistorico(
+            agregado.getReceitaId(),
             agregado.getItem(),
             agregado.getVezesPlanejado(),
             agregado.getVezesServido(),

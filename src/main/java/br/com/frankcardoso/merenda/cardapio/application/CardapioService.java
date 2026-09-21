@@ -5,6 +5,7 @@ import br.com.frankcardoso.merenda.cardapio.api.CardapioResponse;
 import br.com.frankcardoso.merenda.cardapio.api.ItemCardapioDto;
 import br.com.frankcardoso.merenda.cardapio.domain.Cardapio;
 import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
+import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaRepository;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -23,11 +24,14 @@ public class CardapioService {
     };
 
     private final CardapioRepository repository;
+    private final ReceitaRepository receitas;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
-    public CardapioService(CardapioRepository repository, ObjectMapper objectMapper, Clock clock) {
+    public CardapioService(CardapioRepository repository, ReceitaRepository receitas,
+                           ObjectMapper objectMapper, Clock clock) {
         this.repository = repository;
+        this.receitas = receitas;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -52,7 +56,7 @@ public class CardapioService {
             request.turno(),
             request.nomeRefeicao(),
             request.descricao(),
-            escreverItens(request.itens()),
+            escreverItens(resolverReceitas(request.itens())),
             request.quantidadePlanejada(),
             true
         );
@@ -74,7 +78,7 @@ public class CardapioService {
             request.turno(),
             request.nomeRefeicao(),
             request.descricao(),
-            escreverItens(request.itens()),
+            escreverItens(resolverReceitas(request.itens())),
             request.quantidadePlanejada()
         );
 
@@ -110,6 +114,28 @@ public class CardapioService {
             cardapio.getQuantidadePlanejada(),
             cardapio.isAtivo()
         );
+    }
+
+    /**
+     * Garante id em todo item gravado.
+     *
+     * O formulario atual manda so o nome. Em vez de exigir que o front mude de uma vez, o id e
+     * resolvido aqui por igualdade exata no catalogo — e nome fora do catalogo e recusado, em vez
+     * de gravado e casado por aproximacao depois.
+     */
+    private List<ItemCardapioDto> resolverReceitas(List<ItemCardapioDto> itens) {
+        return itens.stream().map(item -> {
+            if (item.receitaId() != null) {
+                var receita = receitas.findById(item.receitaId()).orElseThrow(
+                    () -> new ReceitaDesconhecidaException(
+                        "Receita %s não existe no catálogo".formatted(item.receitaId())));
+                return new ItemCardapioDto(receita.getId(), receita.getNome(), item.quantidade());
+            }
+            var receita = receitas.findByNome(item.nome()).orElseThrow(
+                () -> new ReceitaDesconhecidaException(
+                    "Item \"%s\" não existe no catálogo de receitas".formatted(item.nome())));
+            return new ItemCardapioDto(receita.getId(), receita.getNome(), item.quantidade());
+        }).toList();
     }
 
     private String escreverItens(List<ItemCardapioDto> itens) {

@@ -15,7 +15,11 @@ import java.util.UUID;
  * execucao foi lancada.
  *
  * {@code quantidadeServida} nula significa "planejado sem execucao registrada" — no legado esse
- * e o caso mais comum (cerca de 69% das linhas) e nao representa dado faltante.
+ * e o caso mais comum (cerca de 69% das linhas) e nao representa dado faltante. No legado essa
+ * distincao virou a coluna REFEICOES_SERVIDAS_QTDS.PLANEJADA.
+ *
+ * O item e referenciado por {@code receitaId}, nunca por nome: o nome vive em Receita e serve de
+ * rotulo.
  */
 @Entity
 @Table(name = "historico_consumo")
@@ -37,8 +41,8 @@ public class HistoricoConsumo {
     @Column(nullable = false, length = 150)
     private String refeicao;
 
-    @Column(nullable = false, length = 120)
-    private String item;
+    @Column(name = "receita_id", nullable = false)
+    private UUID receitaId;
 
     @Column(name = "quantidade_planejada", nullable = false)
     private int quantidadePlanejada;
@@ -53,14 +57,14 @@ public class HistoricoConsumo {
     }
 
     public HistoricoConsumo(UUID id, LocalDate data, Turno turno, int escolaId, String refeicao,
-                            String item, int quantidadePlanejada, Integer quantidadeServida,
+                            UUID receitaId, int quantidadePlanejada, Integer quantidadeServida,
                             String origem) {
         this.id = id;
         this.data = data;
         this.turno = turno;
         this.escolaId = escolaId;
         this.refeicao = refeicao;
-        this.item = item;
+        this.receitaId = receitaId;
         this.quantidadePlanejada = quantidadePlanejada;
         this.quantidadeServida = quantidadeServida;
         this.origem = origem;
@@ -71,7 +75,7 @@ public class HistoricoConsumo {
     public Turno getTurno() { return turno; }
     public int getEscolaId() { return escolaId; }
     public String getRefeicao() { return refeicao; }
-    public String getItem() { return item; }
+    public UUID getReceitaId() { return receitaId; }
     public int getQuantidadePlanejada() { return quantidadePlanejada; }
     public Integer getQuantidadeServida() { return quantidadeServida; }
     public String getOrigem() { return origem; }

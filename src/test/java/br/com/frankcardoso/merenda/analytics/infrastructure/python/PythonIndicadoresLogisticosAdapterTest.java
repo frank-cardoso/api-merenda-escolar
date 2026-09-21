@@ -18,7 +18,8 @@ import org.springframework.web.client.RestClient;
 class PythonIndicadoresLogisticosAdapterTest {
     private IndicadoresLogisticosInput input() {
         return new IndicadoresLogisticosInput(LocalDate.of(2026, 9, 17), LocalDate.of(2026, 8, 19),
-            Turno.MANHA, 100, 80, 70, new BigDecimal("80"), List.of(), List.of());
+            Turno.MANHA, 100, 80, 70, new BigDecimal("80"), List.of(), List.of(),
+            null, List.of());
     }
 
     @Test
@@ -34,16 +35,25 @@ class PythonIndicadoresLogisticosAdapterTest {
                  "metaPercentual":80,"turmas":[],"itens":[]}
                 """))
             .andRespond(withSuccess("""
-                {"schemaVersion":"2","calculoVersao":"indicadores-v1","status":"DISPONIVEL",
+                {"schemaVersion":"3","calculoVersao":"indicadores-v1","status":"DISPONIVEL",
                  "dataReferencia":"2026-09-17","inicioHistorico":"2026-08-19","turno":"MANHA",
                  "execucaoPlanejamento":{"refeicoesPlanejadas":100,"consumosRegistrados":80,
                   "percentual":80,"metaPercentual":80,"diferencaMetaPp":0,"statusMeta":"ATINGIDA"},
                  "atendimentos":{"alunosUnicos":70,"repeticoes":10},
+                 "aceitacao":{"status":"DISPONIVEL","nivel":"ALTA","percentual":91.2,
+                  "porcoesServidas":80,"restoNoPrato":7,"motivo":"Medido sobre o servido."},
+                 "desperdicio":{"status":"DISPONIVEL","risco":"BAIXO","percentual":9.5,
+                  "porcoesPreparadas":84,"sobraNaoDistribuida":4,"restoNoPrato":7,
+                  "motivo":"Perda sobre o preparado."},
+                 "ingredientes":{"status":"DISPONIVEL","basePercentualResto":8.5,
+                  "acimaDaBase":[],"motivo":"Sem ingrediente acima dos pratos sem ele."},
                  "topComidas":[],"porTurma":[],"avisos":[]}
                 """, MediaType.APPLICATION_JSON));
         var result = adapter.calcular(input());
         assertThat(result.execucaoPlanejamento().percentual()).isEqualByComparingTo("80");
         assertThat(result.atendimentos().repeticoes()).isEqualTo(10);
+        assertThat(result.aceitacao().nivel()).isEqualTo("ALTA");
+        assertThat(result.desperdicio().risco()).isEqualTo("BAIXO");
         server.verify();
     }
 

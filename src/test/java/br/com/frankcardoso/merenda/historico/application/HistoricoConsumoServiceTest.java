@@ -11,6 +11,7 @@ import br.com.frankcardoso.merenda.historico.infrastructure.HistoricoConsumoRepo
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -28,16 +29,19 @@ class HistoricoConsumoServiceTest {
         return new HistoricoConsumoService(repository);
     }
 
-    private ItemAgregado item(String nome, long planejado, long servido) {
+    private ItemAgregado item(UUID receitaId, String nome, long planejado, long servido) {
         return new ItemAgregado() {
+            public UUID getReceitaId() { return receitaId; }
             public String getItem() { return nome; }
             public long getVezesPlanejado() { return planejado; }
             public long getVezesServido() { return servido; }
         };
     }
 
-    private ItemDiaAgregado itemDia(String nome, LocalDate data, long planejado, long servido) {
+    private ItemDiaAgregado itemDia(UUID receitaId, String nome, LocalDate data, long planejado,
+                                    long servido) {
         return new ItemDiaAgregado() {
+            public UUID getReceitaId() { return receitaId; }
             public String getItem() { return nome; }
             public LocalDate getData() { return data; }
             public long getPlanejado() { return planejado; }
@@ -46,27 +50,23 @@ class HistoricoConsumoServiceTest {
     }
 
     @Test
-    void deveCasarNomeDoCardapioComNomeCompletoDoHistoricoIgnorandoCaseEAcento() {
-        when(repository.taxaPorTodosOsItens(Turno.MANHA, HOJE)).thenReturn(List.of(
-            item("Macarrao ao sugo", 20, 10),
-            item("Arroz branco", 30, 27)
+    void deveBuscarAsReceitasDoCardapioPorId() {
+        var macarrao = UUID.randomUUID();
+        when(repository.taxaPorReceitas(Turno.MANHA, HOJE, List.of(macarrao))).thenReturn(List.of(
+            item(macarrao, "Macarrao ao sugo", 20, 10)
         ));
 
-        var itens = service().itensDoCardapioComTaxa(HOJE, Turno.MANHA, List.of("macarrao"));
+        var itens = service().itensDoCardapioComTaxa(HOJE, Turno.MANHA, List.of(macarrao));
 
-        assertThat(itens).extracting("item").containsExactly("Macarrao ao sugo");
+        assertThat(itens).singleElement().satisfies(item -> {
+            assertThat(item.receitaId()).isEqualTo(macarrao);
+            assertThat(item.item()).isEqualTo("Macarrao ao sugo");
+        });
     }
 
     @Test
-    void naoDeveRetornarItemQuandoNaoHaCorrespondenciaNoHistorico() {
-        when(repository.taxaPorTodosOsItens(Turno.MANHA, HOJE)).thenReturn(List.of(
-            item("Macarrao ao sugo", 20, 10),
-            item("Arroz branco", 30, 27)
-        ));
-
-        var itens = service().itensDoCardapioComTaxa(HOJE, Turno.MANHA, List.of("peixe"));
-
-        assertThat(itens).isEmpty();
+    void naoDeveConsultarNadaQuandoOCardapioNaoTemReceita() {
+        assertThat(service().itensDoCardapioComTaxa(HOJE, Turno.MANHA, List.of())).isEmpty();
     }
 
     @Test
@@ -79,15 +79,17 @@ class HistoricoConsumoServiceTest {
 
     @Test
     void deveAgruparSerieDiariaPorItemMantendoOrdemCronologica() {
-        when(repository.serieDiariaPorItem(Turno.MANHA, HOJE, List.of("Macarrao ao sugo")))
+        var macarrao = UUID.randomUUID();
+        when(repository.serieDiariaPorReceita(Turno.MANHA, HOJE, List.of(macarrao)))
             .thenReturn(List.of(
-                itemDia("Macarrao ao sugo", HOJE.minusDays(3), 20, 18),
-                itemDia("Macarrao ao sugo", HOJE.minusDays(1), 20, 8)
+                itemDia(macarrao, "Macarrao ao sugo", HOJE.minusDays(3), 20, 18),
+                itemDia(macarrao, "Macarrao ao sugo", HOJE.minusDays(1), 20, 8)
             ));
 
-        var serie = service().serieDiariaDosItens(HOJE, Turno.MANHA, List.of("Macarrao ao sugo"));
+        var serie = service().serieDiariaDosItens(HOJE, Turno.MANHA, List.of(macarrao));
 
         assertThat(serie).hasSize(1);
+        assertThat(serie.getFirst().receitaId()).isEqualTo(macarrao);
         assertThat(serie.getFirst().item()).isEqualTo("Macarrao ao sugo");
         assertThat(serie.getFirst().taxasExecucao())
             .containsExactly(new BigDecimal("90.0"), new BigDecimal("40.0"));

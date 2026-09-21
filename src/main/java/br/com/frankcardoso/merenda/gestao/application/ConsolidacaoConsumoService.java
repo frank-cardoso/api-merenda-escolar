@@ -12,6 +12,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,12 +47,15 @@ public class ConsolidacaoConsumoService {
         long sobra = Math.max(0, cardapio.getQuantidadePlanejada() - autorizados);
         BigDecimal taxa = calcularTaxa(autorizados, cardapio.getQuantidadePlanejada());
 
+        var itens = lerItens(cardapio.getItensJson());
+
         return new ConsolidacaoConsumoResponse(
             data,
             turno,
             cardapio.getId(),
             cardapio.getNomeRefeicao(),
-            lerNomesDosItens(cardapio.getItensJson()),
+            itens.stream().map(ItemCardapio::nome).toList(),
+            itens.stream().map(ItemCardapio::receitaId).filter(Objects::nonNull).toList(),
             cardapio.getQuantidadePlanejada(),
             autorizados,
             bloqueados,
@@ -60,22 +65,21 @@ public class ConsolidacaoConsumoService {
     }
 
     /**
-     * Extrai apenas os nomes dos itens. A quantidade por item (ex.: "10 kg") e informacao de
-     * compra, nao ajuda a analise de aceitacao e so gastaria espaco no prompt.
+     * Extrai os itens do cardapio. A quantidade por item (ex.: "10 kg") e informacao de compra,
+     * nao ajuda a analise de aceitacao e so gastaria espaco no prompt.
      */
-    private List<String> lerNomesDosItens(String itensJson) {
+    private List<ItemCardapio> lerItens(String itensJson) {
         if (itensJson == null || itensJson.isBlank()) return List.of();
         try {
             return objectMapper.readValue(itensJson, LISTA_DE_ITENS).stream()
-                .map(ItemCardapio::nome)
-                .filter(nome -> nome != null && !nome.isBlank())
+                .filter(item -> item.nome() != null && !item.nome().isBlank())
                 .toList();
         } catch (JsonProcessingException exception) {
             return List.of();
         }
     }
 
-    private record ItemCardapio(String nome, String quantidade) {
+    private record ItemCardapio(UUID receitaId, String nome, String quantidade) {
     }
 
     private BigDecimal calcularTaxa(long consumos, int quantidadePlanejada) {

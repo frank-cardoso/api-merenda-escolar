@@ -9,6 +9,8 @@ import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
 import br.com.frankcardoso.merenda.fila.domain.*;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.historico.domain.HistoricoConsumo;
+import br.com.frankcardoso.merenda.catalogo.domain.Receita;
+import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaRepository;
 import br.com.frankcardoso.merenda.historico.infrastructure.HistoricoConsumoRepository;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -21,15 +23,22 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional
 class IndicadoresDadosServiceTest {
+
+    private static final UUID ID_ARROZ = UUID.randomUUID();
+    private static final UUID ID_FORA = UUID.randomUUID();
     @Autowired IndicadoresDadosService dados;
     @Autowired AlunoRepository alunos;
     @Autowired CardapioRepository cardapios;
     @Autowired AuditoriaConsumoRepository auditorias;
     @Autowired HistoricoConsumoRepository historicos;
+    @Autowired ReceitaRepository receitas;
 
     @Test
     void agregaPorTurmaSemContarBloqueiosOuRepeticoesComoNovosAlunos() {
         var data = LocalDate.of(2030, 1, 15);
+        // O historico referencia receita por FK: o catalogo precisa existir antes.
+        receitas.save(new Receita(ID_ARROZ, "Arroz", null));
+        receitas.save(new Receita(ID_FORA, "Fora da janela", null));
         var aluno = alunos.save(new Aluno(UUID.randomUUID(), "TEST-IND", "TEST-IND", "Teste",
             "Turma Teste", true, Instant.now()));
         var cardapio = cardapios.save(new Cardapio(UUID.randomUUID(), data, Turno.MANHA,
@@ -45,11 +54,11 @@ class IndicadoresDadosServiceTest {
             Turno.MANHA, Instant.now(), MetodoIdentificacao.QR_CODE, ResultadoConsumo.AUTORIZADO,
             null, UUID.randomUUID(), null));
         historicos.save(new HistoricoConsumo(UUID.randomUUID(), data.minusDays(1), Turno.MANHA,
-            1, "Almoço", "Arroz", 100, null, "TESTE"));
+            1, "Almoço", ID_ARROZ, 100, null, "TESTE"));
         historicos.save(new HistoricoConsumo(UUID.randomUUID(), data.minusDays(2), Turno.MANHA,
-            1, "Almoço", "Arroz", 100, 0, "TESTE"));
+            1, "Almoço", ID_ARROZ, 100, 0, "TESTE"));
         historicos.save(new HistoricoConsumo(UUID.randomUUID(), data.minusDays(60), Turno.MANHA,
-            1, "Almoço", "Fora da janela", 100, 90, "TESTE"));
+            1, "Almoço", ID_FORA, 100, 90, "TESTE"));
 
         var input = dados.preparar(data, Turno.MANHA);
 

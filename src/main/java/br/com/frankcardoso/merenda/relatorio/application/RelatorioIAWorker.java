@@ -16,6 +16,8 @@ import br.com.frankcardoso.merenda.historico.application.HistoricoConsumoService
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaInput;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaOutput;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaPort;
+import br.com.frankcardoso.merenda.inteligencia.application.port.ConclusaoDeterministica;
+import br.com.frankcardoso.merenda.inteligencia.application.port.IndicadoresParaLLM;
 import br.com.frankcardoso.merenda.inteligencia.application.port.ItemComTendencia;
 import br.com.frankcardoso.merenda.relatorio.domain.RelatorioIA;
 import br.com.frankcardoso.merenda.relatorio.infrastructure.RelatorioIARepository;
@@ -104,7 +106,7 @@ public class RelatorioIAWorker {
             consolidacao = alinharConsolidacaoAFotografia(consolidacao, indicadores);
             AnaliseLogisticaInput input = criarInput(consolidacao, preverConsumo(consolidacao), indicadores);
 
-            relatorio.registrarIndicadores(escreverJson(input.indicadores()));
+            relatorio.registrarIndicadores(escreverJson(indicadores));
 
             relatorio.iniciar(provedor, modelo, escreverJson(input), Instant.now(clock));
             relatorio = repository.saveAndFlush(relatorio);
@@ -114,9 +116,11 @@ public class RelatorioIAWorker {
                 throw new IllegalStateException("O provedor de IA retornou resposta vazia");
             }
             resultado.saida().validar();
+            var saida = comClassificacoesDeterministicas(
+                resultado.saida(), input.conclusaoDeterministica());
 
-            relatorio.concluir(resultado.provedor(), resultado.modelo(), escreverJson(resultado.saida()),
-                resultado.saida().resumoExecutivo(), Instant.now(clock));
+            relatorio.concluir(resultado.provedor(), resultado.modelo(), escreverJson(saida),
+                saida.resumoExecutivo(), Instant.now(clock));
             repository.save(relatorio);
         } catch (Exception exception) {
             relatorio.falhar(mensagemSegura(exception), Instant.now(clock));
@@ -131,7 +135,7 @@ public class RelatorioIAWorker {
     ) {
         var ranking = historicoService.rankingDosPioresItens(consolidacao.data(), consolidacao.turno());
         var itensComTaxa = historicoService.itensDoCardapioComTaxa(
-            consolidacao.data(), consolidacao.turno(), consolidacao.itensCardapio());
+            consolidacao.data(), consolidacao.turno(), consolidacao.receitasCardapio());
 
         return new AnaliseLogisticaInput(
             consolidacao.data(),
@@ -147,8 +151,23 @@ public class RelatorioIAWorker {
             resultadoPrevisao.aviso(),
             ranking,
             itensComTendencia(consolidacao, itensComTaxa),
-            indicadores
+            IndicadoresParaLLM.de(indicadores),
+            ConclusaoDeterministica.de(indicadores, resultadoPrevisao.previsao())
         );
+    }
+
+    /**
+     * O modelo redige, o codigo classifica. Sem isso o painel voltava a estampar desperdicio ALTO
+     * sem nenhuma medicao de sobra por tras — o modelo apenas repetia o campo que ja chegava
+     * classificado no payload.
+     */
+    private AnaliseLogisticaOutput comClassificacoesDeterministicas(
+        AnaliseLogisticaOutput saida, ConclusaoDeterministica conclusao
+    ) {
+        if (conclusao == null) return saida;
+        return new AnaliseLogisticaOutput(saida.resumoExecutivo(), conclusao.nivelAceitacao(),
+            conclusao.riscoDesperdicio(), saida.evidencias(), saida.recomendacoes(),
+            saida.observacaoLimitacoes());
     }
 
     // A fila pode avançar enquanto as consultas são feitas. A fotografia prevalece também
@@ -158,7 +177,8 @@ public class RelatorioIAWorker {
         if (indicadores == null || indicadores.execucaoPlanejamento() == null) return original;
         var execucao = indicadores.execucaoPlanejamento();
         return new ConsolidacaoConsumoResponse(original.data(), original.turno(), original.cardapioId(),
-            original.cardapio(), original.itensCardapio(), Math.toIntExact(execucao.refeicoesPlanejadas()),
+            original.cardapio(), original.itensCardapio(), original.receitasCardapio(),
+            Math.toIntExact(execucao.refeicoesPlanejadas()),
             execucao.consumosRegistrados(), original.tentativasBloqueadas(),
             execucao.percentual() == null ? BigDecimal.ZERO : execucao.percentual(),
             Math.max(0, execucao.refeicoesPlanejadas() - execucao.consumosRegistrados()));
@@ -176,28 +196,31 @@ public class RelatorioIAWorker {
     ) {
         if (itensComTaxa.isEmpty()) return List.of();
 
-        Map<String, String> tendenciaPorItem;
+        Map<String, String> tendenciaPorReceita;
         try {
-            var nomesResolvidos = itensComTaxa.stream().map(ItemHistorico::item).toList();
+            var receitas = itensComTaxa.stream().map(ItemHistorico::receitaId).toList();
             var series = historicoService.serieDiariaDosItens(
-                consolidacao.data(), consolidacao.turno(), nomesResolvidos);
+                consolidacao.data(), consolidacao.turno(), receitas);
 
-            tendenciaPorItem = tendenciaItemPort.calcular(
+            // A chave trafegada e o id da receita: o servico de tendencia so devolve a chave que
+            // recebeu, e nome nao serve de chave estavel.
+            tendenciaPorReceita = tendenciaItemPort.calcular(
                     series.stream()
-                        .map(serie -> new TendenciaItemInput(serie.item(), serie.taxasExecucao()))
+                        .map(serie -> new TendenciaItemInput(
+                            serie.receitaId().toString(), serie.taxasExecucao()))
                         .toList())
                 .stream()
                 .collect(Collectors.toMap(TendenciaItemOutput::item, TendenciaItemOutput::tendencia));
         } catch (Exception exception) {
             LOG.warn("Servico de tendencia de itens falhou, seguindo sem tendencia: {}",
                 exception.getMessage());
-            tendenciaPorItem = Map.of();
+            tendenciaPorReceita = Map.of();
         }
 
-        Map<String, String> tendenciaResolvida = tendenciaPorItem;
+        Map<String, String> tendenciaResolvida = tendenciaPorReceita;
         return itensComTaxa.stream()
-            .map(item -> new ItemComTendencia(
-                item.item(), item.taxaExecucao(), tendenciaResolvida.get(item.item())))
+            .map(item -> new ItemComTendencia(item.receitaId(), item.item(), item.taxaExecucao(),
+                tendenciaResolvida.get(item.receitaId().toString())))
             .toList();
     }
 

@@ -5,12 +5,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import br.com.frankcardoso.merenda.cardapio.api.CardapioRequest;
 import br.com.frankcardoso.merenda.cardapio.api.ItemCardapioDto;
 import br.com.frankcardoso.merenda.cardapio.domain.Cardapio;
 import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
+import br.com.frankcardoso.merenda.catalogo.domain.Receita;
+import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaRepository;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
@@ -35,11 +38,22 @@ class CardapioServiceTest {
     @Mock
     private CardapioRepository repository;
 
+    @Mock
+    private ReceitaRepository receitas;
+
+    private static final UUID ID_ARROZ = UUID.randomUUID();
+    private static final UUID ID_FRANGO = UUID.randomUUID();
+
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final Clock clock = Clock.fixed(AGORA, ZoneOffset.UTC);
 
     private CardapioService criarService() {
-        return new CardapioService(repository, objectMapper, clock);
+        // O cadastro resolve o id da receita pelo nome exato; sem catalogo nada e aceito.
+        lenient().when(receitas.findByNome("arroz"))
+            .thenReturn(Optional.of(new Receita(ID_ARROZ, "arroz", null)));
+        lenient().when(receitas.findByNome("frango"))
+            .thenReturn(Optional.of(new Receita(ID_FRANGO, "frango", null)));
+        return new CardapioService(repository, receitas, objectMapper, clock);
     }
 
     private CardapioRequest requisicao(LocalDate data, Turno turno) {
@@ -48,7 +62,8 @@ class CardapioServiceTest {
             turno,
             "Arroz com frango",
             "Cardapio de teste",
-            List.of(new ItemCardapioDto("arroz", "10 kg"), new ItemCardapioDto("frango", "15 kg")),
+            List.of(new ItemCardapioDto(null, "arroz", "10 kg"),
+                new ItemCardapioDto(null, "frango", "15 kg")),
             300
         );
     }
@@ -63,8 +78,9 @@ class CardapioServiceTest {
         var captor = ArgumentCaptor.forClass(Cardapio.class);
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getItensJson())
-            .isEqualTo("[{\"nome\":\"arroz\",\"quantidade\":\"10 kg\"},"
-                + "{\"nome\":\"frango\",\"quantidade\":\"15 kg\"}]");
+            .isEqualTo(("[{\"receitaId\":\"%s\",\"nome\":\"arroz\",\"quantidade\":\"10 kg\"},"
+                + "{\"receitaId\":\"%s\",\"nome\":\"frango\",\"quantidade\":\"15 kg\"}]")
+                .formatted(ID_ARROZ, ID_FRANGO));
         assertThat(captor.getValue().isAtivo()).isTrue();
         assertThat(resposta.itens()).hasSize(2);
         assertThat(resposta.itens().getFirst().nome()).isEqualTo("arroz");
@@ -156,5 +172,28 @@ class CardapioServiceTest {
         assertThat(lista).hasSize(1);
         assertThat(lista.getFirst().itens()).singleElement()
             .satisfies(item -> assertThat(item.nome()).isEqualTo("pao"));
+    }
+
+    @Test
+    void deveRecusarItemQueNaoExisteNoCatalogoDeReceitas() {
+        lenient().when(receitas.findByNome("peixe")).thenReturn(Optional.empty());
+        var request = new CardapioRequest(HOJE, Turno.NOITE, "Peixe", "",
+            List.of(new ItemCardapioDto(null, "peixe", "5 kg")), 100);
+
+        assertThatThrownBy(() -> criarService().criar(request))
+            .isInstanceOf(ReceitaDesconhecidaException.class)
+            .hasMessageContaining("peixe");
+    }
+
+    @Test
+    void deveRecusarReceitaIdInexistente() {
+        var idSolto = UUID.randomUUID();
+        lenient().when(receitas.findById(idSolto)).thenReturn(Optional.empty());
+        var request = new CardapioRequest(HOJE, Turno.NOITE, "Solto", "",
+            List.of(new ItemCardapioDto(idSolto, "qualquer", "5 kg")), 100);
+
+        assertThatThrownBy(() -> criarService().criar(request))
+            .isInstanceOf(ReceitaDesconhecidaException.class)
+            .hasMessageContaining(idSolto.toString());
     }
 }

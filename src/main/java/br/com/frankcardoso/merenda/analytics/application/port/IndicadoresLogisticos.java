@@ -11,7 +11,8 @@ public record IndicadoresLogisticos(
     LocalDate dataReferencia, LocalDate inicioHistorico, Turno turno,
     ExecucaoPlanejamento execucaoPlanejamento, Atendimentos atendimentos,
     List<ItemRanking> topComidas, List<TurmaIndicadores> porTurma,
-    AnaliseIndisponivel ingredientes, AnaliseIndisponivel rotacaoCardapio, List<String> avisos
+    Aceitacao aceitacao, Desperdicio desperdicio,
+    AnaliseIngredientes ingredientes, AnaliseIndisponivel rotacaoCardapio, List<String> avisos
 ) {
     public record ExecucaoPlanejamento(long refeicoesPlanejadas, long consumosRegistrados,
         BigDecimal percentual, BigDecimal metaPercentual, BigDecimal diferencaMetaPp, String statusMeta) {}
@@ -22,9 +23,23 @@ public record IndicadoresLogisticos(
         long repeticoes, BigDecimal percentual, String statusMeta, String motivo) {}
     public record AnaliseIndisponivel(String status, String motivo, Integer cicloSugeridoDias) {}
 
+    /** Medida pelo que voltou no prato. Nao confundir com execucao do planejamento. */
+    public record Aceitacao(String status, String nivel, BigDecimal percentual,
+        Long porcoesServidas, Long restoNoPrato, String motivo) {}
+
+    /** Perda sobre o preparado: sobra na cuba mais resto no prato. */
+    public record Desperdicio(String status, String risco, BigDecimal percentual,
+        Long porcoesPreparadas, Long sobraNaoDistribuida, Long restoNoPrato, String motivo) {}
+
+    public record IngredienteResto(String ingredienteId, String ingrediente, long amostra,
+        BigDecimal percentualRestoCom, BigDecimal percentualRestoSem, BigDecimal diferencaPp) {}
+
+    public record AnaliseIngredientes(String status, BigDecimal basePercentualResto,
+        List<IngredienteResto> acimaDaBase, String motivo) {}
+
     public static IndicadoresLogisticos indisponivel(LocalDate data, Turno turno) {
-        return new IndicadoresLogisticos("2", "indicadores-v1", "INDISPONIVEL", data,
-            data.minusDays(29), turno, null, null, List.of(), List.of(), null, null,
+        return new IndicadoresLogisticos("3", "indicadores-v1", "INDISPONIVEL", data,
+            data.minusDays(29), turno, null, null, List.of(), List.of(), null, null, null, null,
             List.of("Serviço de indicadores indisponível. Nenhum percentual foi estimado pela IA."));
     }
 }

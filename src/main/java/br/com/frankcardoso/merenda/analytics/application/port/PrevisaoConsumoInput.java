@@ -19,7 +19,7 @@ public record PrevisaoConsumoInput(
     long consumosAutorizados,
     long tentativasBloqueadas,
     BigDecimal taxaConsumoPlanejado,
-    long sobraEstimada,
+    long sobraDePlanejamento,
     List<DiaConsumo> historico
 ) {
 
@@ -31,10 +31,10 @@ public record PrevisaoConsumoInput(
         long consumosAutorizados,
         long tentativasBloqueadas,
         BigDecimal taxaConsumoPlanejado,
-        long sobraEstimada
+        long sobraDePlanejamento
     ) {
         this(dataReferencia, turno, cardapio, quantidadePlanejada, consumosAutorizados,
-            tentativasBloqueadas, taxaConsumoPlanejado, sobraEstimada, List.of());
+            tentativasBloqueadas, taxaConsumoPlanejado, sobraDePlanejamento, List.of());
     }
 
     public record DiaConsumo(LocalDate dataReferencia, long consumosAutorizados) {

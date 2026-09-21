@@ -38,17 +38,21 @@ class PythonPrevisaoConsumoAdapterTest {
                   "consumosAutorizados": 1,
                   "tentativasBloqueadas": 3,
                   "taxaConsumoPlanejado": 0.33,
-                  "sobraEstimada": 299,
+                  "sobraDePlanejamento": 299,
                   "historico": []
                 }
                 """))
             .andRespond(withSuccess("""
                 {
                   "demandaEstimada": 1,
-                  "ajusteSugerido": -299,
-                  "riscoDesperdicio": "ALTO",
+                  "mediaHistorica": null,
+                  "pisoRealizado": 1,
+                  "origemEstimativa": "REALIZADO_SEM_HISTORICO",
+                  "diferencaPrevisaoPlanejamento": -299,
+                  "riscoDesperdicio": "NAO_AVALIAVEL",
+                  "desperdicioMotivo": "Sem medicao de sobra e resto",
                   "confianca": "BAIXA",
-                  "metodo": "baseline-estatistico-v1",
+                  "metodo": "baseline-estatistico-v2",
                   "evidencias": ["Historico insuficiente"]
                 }
                 """, APPLICATION_JSON));
@@ -65,10 +69,14 @@ class PythonPrevisaoConsumoAdapterTest {
         ));
 
         assertThat(resultado.demandaEstimada()).isEqualTo(1);
-        assertThat(resultado.ajusteSugerido()).isEqualTo(-299);
-        assertThat(resultado.riscoDesperdicio()).isEqualTo("ALTO");
+        assertThat(resultado.mediaHistorica()).isNull();
+        assertThat(resultado.pisoRealizado()).isEqualTo(1);
+        assertThat(resultado.origemEstimativa()).isEqualTo("REALIZADO_SEM_HISTORICO");
+        assertThat(resultado.diferencaPrevisaoPlanejamento()).isEqualTo(-299);
+        assertThat(resultado.riscoDesperdicio()).isEqualTo("NAO_AVALIAVEL");
+        assertThat(resultado.desperdicioMotivo()).isEqualTo("Sem medicao de sobra e resto");
         assertThat(resultado.confianca()).isEqualTo("BAIXA");
-        assertThat(resultado.metodo()).isEqualTo("baseline-estatistico-v1");
+        assertThat(resultado.metodo()).isEqualTo("baseline-estatistico-v2");
         assertThat(resultado.evidencias()).containsExactly("Historico insuficiente");
         server.verify();
     }

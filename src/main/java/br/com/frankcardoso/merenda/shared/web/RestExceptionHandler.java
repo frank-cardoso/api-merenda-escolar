@@ -3,7 +3,9 @@ package br.com.frankcardoso.merenda.shared.web;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioDataPassadaException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioDuplicadoException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioNaoEncontradoPorIdException;
+import br.com.frankcardoso.merenda.cardapio.application.ReceitaDesconhecidaException;
 import br.com.frankcardoso.merenda.gestao.application.CardapioNaoEncontradoException;
+import br.com.frankcardoso.merenda.medicao.domain.MedicaoSobraInconsistenteException;
 import br.com.frankcardoso.merenda.relatorio.application.RelatorioNaoEncontradoException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -30,8 +32,9 @@ public class RestExceptionHandler {
         return problema(HttpStatus.CONFLICT, "Conflito", exception.getMessage(), request);
     }
 
-    @ExceptionHandler(CardapioDataPassadaException.class)
-    ProblemDetail tratarDataPassada(CardapioDataPassadaException exception, HttpServletRequest request) {
+    @ExceptionHandler({CardapioDataPassadaException.class, MedicaoSobraInconsistenteException.class,
+        ReceitaDesconhecidaException.class})
+    ProblemDetail tratarEntradaInvalida(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.BAD_REQUEST, "Requisicao invalida", exception.getMessage(), request);
     }
 

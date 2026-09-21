@@ -65,7 +65,7 @@ public class PythonPrevisaoConsumoAdapter implements PrevisaoConsumoPort {
         long consumosAutorizados,
         long tentativasBloqueadas,
         BigDecimal taxaConsumoPlanejado,
-        long sobraEstimada,
+        long sobraDePlanejamento,
         List<DiaHistorico> historico
     ) {
 
@@ -78,7 +78,7 @@ public class PythonPrevisaoConsumoAdapter implements PrevisaoConsumoPort {
                 input.consumosAutorizados(),
                 input.tentativasBloqueadas(),
                 input.taxaConsumoPlanejado(),
-                input.sobraEstimada(),
+                input.sobraDePlanejamento(),
                 input.historico().stream()
                     .map(dia -> new DiaHistorico(
                         dia.dataReferencia().toString(), dia.consumosAutorizados()))

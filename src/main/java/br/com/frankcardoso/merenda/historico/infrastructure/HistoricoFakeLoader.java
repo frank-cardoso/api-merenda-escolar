@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
  * dados, e apagar a tabela e suficiente para recarregar depois de regerar o CSV.
  */
 @Component
+@Order(2)
 public class HistoricoFakeLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(HistoricoFakeLoader.class);
@@ -89,10 +91,10 @@ public class HistoricoFakeLoader {
             Turno.valueOf(campos[2]),
             Integer.parseInt(campos[3]),
             campos[4],
-            campos[5],
-            Integer.parseInt(campos[6]),
-            campos[7].isBlank() ? null : Integer.parseInt(campos[7]),
-            campos[8]
+            UUID.fromString(campos[5]),
+            Integer.parseInt(campos[7]),
+            campos[8].isBlank() ? null : Integer.parseInt(campos[8]),
+            campos[9]
         );
     }
 }
