@@ -19,7 +19,7 @@ class PythonIndicadoresLogisticosAdapterTest {
     private IndicadoresLogisticosInput input() {
         return new IndicadoresLogisticosInput(LocalDate.of(2026, 9, 17), LocalDate.of(2026, 8, 19),
             Turno.MANHA, 100, 80, 70, new BigDecimal("80"), List.of(), List.of(),
-            null, List.of());
+            null, List.of(), List.of(), List.of(), 0, 0, List.of());
     }
 
     @Test
@@ -47,7 +47,8 @@ class PythonIndicadoresLogisticosAdapterTest {
                   "motivo":"Perda sobre o preparado."},
                  "ingredientes":{"status":"DISPONIVEL","basePercentualResto":8.5,
                   "acimaDaBase":[],"motivo":"Sem ingrediente acima dos pratos sem ele."},
-                 "topComidas":[],"porTurma":[],"avisos":[]}
+                 "topComidas":[],"aceitacaoItens":[],"aceitacaoItensSemana":[],
+                 "porTurma":[],"avisos":[]}
                 """, MediaType.APPLICATION_JSON));
         var result = adapter.calcular(input());
         assertThat(result.execucaoPlanejamento().percentual()).isEqualByComparingTo("80");

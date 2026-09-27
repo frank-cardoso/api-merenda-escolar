@@ -12,5 +12,7 @@ public interface CardapioRepository extends JpaRepository<Cardapio, UUID> {
     Optional<Cardapio> findByDataAndTurnoAndAtivoTrue(LocalDate data, Turno turno);
     Optional<Cardapio> findByIdAndAtivoTrue(UUID id);
     List<Cardapio> findAllByAtivoTrueOrderByDataDescTurnoAsc();
+    List<Cardapio> findAllByDataBetweenAndTurnoAndAtivoTrueOrderByDataAsc(
+        LocalDate inicio, LocalDate fim, Turno turno);
     boolean existsByDataAndTurnoAndAtivoTrue(LocalDate data, Turno turno);
 }

@@ -17,7 +17,7 @@ class IndicadoresParaLLMTest {
     private IndicadoresLogisticos comTurmas(List<TurmaIndicadores> turmas) {
         return new IndicadoresLogisticos("2", "indicadores-v1", "DISPONIVEL",
             LocalDate.of(2026, 9, 21), LocalDate.of(2026, 8, 23), Turno.MANHA,
-            null, null, List.of(), turmas, null, null, null, null, List.of());
+            null, null, List.of(), List.of(), List.of(), 0, 0, List.of(), turmas, null, null, null, null, List.of());
     }
 
     private TurmaIndicadores turma(String nome, long consumos, String statusMeta, BigDecimal pct) {

@@ -18,7 +18,7 @@ class IndicadoresLogisticosServiceTest {
         var port = mock(IndicadoresLogisticosPort.class);
         var data = LocalDate.of(2026, 9, 17);
         var input = new IndicadoresLogisticosInput(data, data.minusDays(29), Turno.NOITE,
-            100, 80, 70, BigDecimal.valueOf(80), List.of(), List.of(), null, List.of());
+            100, 80, 70, BigDecimal.valueOf(80), List.of(), List.of(), null, List.of(), List.of(), List.of(), 0, 0, List.of());
         when(dados.preparar(data, Turno.NOITE)).thenReturn(input);
         when(port.calcular(input)).thenThrow(new ResourceAccessException("offline"));
         var output = new IndicadoresLogisticosService(dados, port).calcular(data, Turno.NOITE);

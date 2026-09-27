@@ -26,6 +26,12 @@ public class RelatorioIA {
     @Column(length = 20)
     private Turno turno;
 
+    @Column(name = "receita_ids_json", columnDefinition = "CHARACTER LARGE OBJECT")
+    private String receitaIdsJson;
+
+    @Column(name = "datas_selecionadas_json", columnDefinition = "CHARACTER LARGE OBJECT")
+    private String datasSelecionadasJson;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private StatusRelatorioIA status;
@@ -73,16 +79,29 @@ public class RelatorioIA {
     protected RelatorioIA() {
     }
 
-    public static RelatorioIA pendente(LocalDate data, Turno turno, Instant agora) {
+    public static RelatorioIA pendente(LocalDate data, Turno turno, Instant agora,
+        java.util.List<UUID> receitaIds, java.util.List<LocalDate> datasSelecionadas) {
         var relatorio = new RelatorioIA();
         relatorio.id = UUID.randomUUID();
         relatorio.dataReferencia = data;
         relatorio.turno = turno;
+        relatorio.receitaIdsJson = receitaIds.stream().map(UUID::toString).reduce((a, b) -> a + "," + b).orElse("");
+        relatorio.datasSelecionadasJson = datasSelecionadas.stream().map(LocalDate::toString)
+            .reduce((a, b) -> a + "," + b).orElse("");
         relatorio.status = StatusRelatorioIA.PENDENTE;
         relatorio.promptVersao = "v2-indicadores";
         relatorio.tentativas = 0;
         relatorio.criadoEm = agora;
         return relatorio;
+    }
+
+    public static RelatorioIA pendente(LocalDate data, Turno turno, Instant agora) {
+        return pendente(data, turno, agora, java.util.List.of(), java.util.List.of());
+    }
+
+    public static RelatorioIA pendente(LocalDate data, Turno turno, Instant agora,
+        java.util.List<UUID> receitaIds) {
+        return pendente(data, turno, agora, receitaIds, java.util.List.of());
     }
 
     public void iniciar(String provedor, String modelo, String dadosEntradaJson, Instant agora) {
@@ -133,6 +152,8 @@ public class RelatorioIA {
     public UUID getId() { return id; }
     public LocalDate getDataReferencia() { return dataReferencia; }
     public Turno getTurno() { return turno; }
+    public String getReceitaIdsJson() { return receitaIdsJson; }
+    public String getDatasSelecionadasJson() { return datasSelecionadasJson; }
     public StatusRelatorioIA getStatus() { return status; }
     public String getProvedor() { return provedor; }
     public String getModelo() { return modelo; }

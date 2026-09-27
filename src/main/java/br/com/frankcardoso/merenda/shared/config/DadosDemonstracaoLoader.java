@@ -4,11 +4,16 @@ import br.com.frankcardoso.merenda.aluno.domain.Aluno;
 import br.com.frankcardoso.merenda.aluno.infrastructure.AlunoRepository;
 import br.com.frankcardoso.merenda.cardapio.domain.Cardapio;
 import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
+import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaRepository;
 import br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo;
 import br.com.frankcardoso.merenda.fila.domain.MetodoIdentificacao;
 import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
+import br.com.frankcardoso.merenda.medicao.domain.MedicaoSobra;
+import br.com.frankcardoso.merenda.medicao.infrastructure.MedicaoSobraRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -27,6 +32,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Profile;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Component
 @Profile("!test")
+@Order(5)
 public class DadosDemonstracaoLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(DadosDemonstracaoLoader.class);
@@ -71,7 +78,10 @@ public class DadosDemonstracaoLoader {
     private final AlunoRepository alunos;
     private final CardapioRepository cardapios;
     private final AuditoriaConsumoRepository auditorias;
+    private final MedicaoSobraRepository medicoes;
     private final CatalogoItensDemonstracao catalogo;
+    private final ReceitaRepository receitas;
+    private final ObjectMapper objectMapper;
     private final Clock clock;
     private final int diasDeHistorico;
     private final int alunosNecessarios;
@@ -80,15 +90,23 @@ public class DadosDemonstracaoLoader {
         AlunoRepository alunos,
         CardapioRepository cardapios,
         AuditoriaConsumoRepository auditorias,
+        MedicaoSobraRepository medicoes,
         CatalogoItensDemonstracao catalogo,
+        ReceitaRepository receitas,
+        ObjectMapper objectMapper,
         Clock clock,
-        @Value("${merenda.demo.dias:30}") int diasDeHistorico,
+        // Mantém dados suficientes para consultar qualquer referência dos últimos 30 dias
+        // sem deixar a demonstração sem um cardápio analisável no início da janela.
+        @Value("${merenda.demo.dias:60}") int diasDeHistorico,
         @Value("${merenda.demo.alunos:150}") int alunosNecessarios
     ) {
         this.alunos = alunos;
         this.cardapios = cardapios;
         this.auditorias = auditorias;
+        this.medicoes = medicoes;
         this.catalogo = catalogo;
+        this.receitas = receitas;
+        this.objectMapper = objectMapper;
         this.clock = clock;
         this.diasDeHistorico = diasDeHistorico;
         this.alunosNecessarios = alunosNecessarios;
@@ -104,6 +122,8 @@ public class DadosDemonstracaoLoader {
         List<Aluno> turma = garantirAlunos(agora);
         LocalDate hoje = LocalDate.now(clock.withZone(ZONA_OPERACIONAL));
 
+        corrigirCardapiosDemonstracao(rng);
+
         long consumosCriados = 0;
         for (int voltar = diasDeHistorico; voltar >= 0; voltar--) {
             LocalDate dia = hoje.minusDays(voltar);
@@ -114,6 +134,8 @@ public class DadosDemonstracaoLoader {
                 consumosCriados += gerarConsumos(cardapio, dia, turno, turma, rng, agora);
             }
         }
+
+        garantirMedicoesCardapioPrincipal(hoje, rng, agora);
 
         // NOITE ganha cardapio apenas para hoje, e sem consumo: o turno nao existe em producao,
         // mas o TurnoResolver da fila resolve NOITE depois das 18h — sem cardapio, testar a
@@ -150,16 +172,114 @@ public class DadosDemonstracaoLoader {
     }
 
     private Cardapio garantirCardapio(LocalDate dia, Turno turno, Random rng) {
-        return cardapios.findByDataAndTurnoAndAtivoTrue(dia, turno)
-            .orElseGet(() -> {
-                var itens = catalogo.sortearCardapio(rng);
-                return cardapios.save(new Cardapio(
-                    UUID.randomUUID(), dia, turno,
-                    itens.nomeDaRefeicao(),
-                    "Cardapio de demonstracao",
-                    itens.comoJson(),
-                    300, true));
-            });
+        var existente = cardapios.findByDataAndTurnoAndAtivoTrue(dia, turno);
+        if (existente.isPresent()) {
+            return corrigirSeNecessario(existente.get(), rng);
+        }
+
+        var itens = turno == Turno.INTEGRAL
+            ? catalogo.cardapioPrincipal(rng)
+            : catalogo.sortearCardapio(rng);
+        return cardapios.save(new Cardapio(
+            UUID.randomUUID(), dia, turno,
+            itens.nomeDaRefeicao(),
+            "Cardapio de demonstracao",
+            itens.comoJson(),
+            300, true));
+    }
+
+    /**
+     * Cardapios demonstrativos antigos foram gravados antes da identidade por receita. Eles nao
+     * podem continuar sendo preservados como se fossem validos: sem receitaId, historico,
+     * medicao e analise ficam sem uma chave comum. Recria somente esses dados controlados pelo
+     * seed, mantendo data, turno e vinculo com auditorias existentes.
+     */
+    private void corrigirCardapiosDemonstracao(Random rng) {
+        cardapios.findAll().stream()
+            .filter(cardapio -> cardapio.isAtivo())
+            .filter(cardapio -> "Cardapio de demonstracao".equals(cardapio.getDescricao()))
+            .forEach(cardapio -> corrigirSeNecessario(cardapio, rng));
+    }
+
+    private Cardapio corrigirSeNecessario(Cardapio cardapio, Random rng) {
+        if (cardapio.getTurno() == Turno.INTEGRAL
+            && "Cardapio de demonstracao".equals(cardapio.getDescricao())) {
+            var principal = catalogo.cardapioPrincipal(rng);
+            if (!mesmoConjuntoDeReceitas(cardapio.getItensJson(), principal.comoJson())) {
+                cardapio.atualizar(cardapio.getData(), cardapio.getTurno(), principal.nomeDaRefeicao(),
+                    cardapio.getDescricao(), principal.comoJson(), cardapio.getQuantidadePlanejada());
+                cardapios.save(cardapio);
+                return cardapio;
+            }
+        }
+        if (itensComReceita(cardapio.getItensJson())) return cardapio;
+
+        var itens = catalogo.sortearCardapio(rng);
+        cardapio.atualizar(cardapio.getData(), cardapio.getTurno(), itens.nomeDaRefeicao(),
+            cardapio.getDescricao(), itens.comoJson(), cardapio.getQuantidadePlanejada());
+        cardapios.save(cardapio);
+        LOG.info("Cardapio de demonstracao corrigido: data={}, turno={}, itens com receitaId",
+            cardapio.getData(), cardapio.getTurno());
+        return cardapio;
+    }
+
+    private boolean mesmoConjuntoDeReceitas(String primeiroJson, String segundoJson) {
+        try {
+            return ids(primeiroJson).equals(ids(segundoJson));
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
+    private Set<UUID> ids(String json) throws Exception {
+        var itens = objectMapper.readTree(json);
+        var ids = new java.util.HashSet<UUID>();
+        for (JsonNode item : itens) ids.add(UUID.fromString(item.path("receitaId").asText()));
+        return ids;
+    }
+
+    private void garantirMedicoesCardapioPrincipal(LocalDate hoje, Random rng, Instant registradoEm) {
+        for (int voltar = diasDeHistorico; voltar >= 0; voltar--) {
+            var dia = hoje.minusDays(voltar);
+            if (!DIAS_UTEIS.contains(dia.getDayOfWeek())) continue;
+            var cardapio = cardapios.findByDataAndTurnoAndAtivoTrue(dia, Turno.INTEGRAL).orElse(null);
+            if (cardapio == null || !"Cardapio de demonstracao".equals(cardapio.getDescricao())) continue;
+            try {
+                var receitas = ids(cardapio.getItensJson());
+                for (var receitaId : receitas) {
+                    if (medicoes.findByDataAndTurnoAndEscolaIdAndReceitaId(
+                        dia, Turno.INTEGRAL, 1, receitaId).isPresent()) continue;
+                    int preparadas = 100;
+                    int servidas = 78 + rng.nextInt(15);
+                    int resto = Math.min(servidas, 5 + rng.nextInt(12));
+                    medicoes.save(new MedicaoSobra(UUID.randomUUID(), dia, Turno.INTEGRAL, 1,
+                        receitaId, preparadas, servidas, preparadas - servidas, resto,
+                        "SINTETICO", registradoEm));
+                }
+            } catch (Exception exception) {
+                LOG.warn("Não foi possível gerar medições do cardápio principal em {}: {}",
+                    dia, exception.getMessage());
+            }
+        }
+    }
+
+    private boolean itensComReceita(String itensJson) {
+        try {
+            JsonNode itens = objectMapper.readTree(itensJson);
+            if (!itens.isArray() || itens.isEmpty()) return false;
+            for (JsonNode item : itens) {
+                if (!item.path("receitaId").isTextual()
+                    || item.path("receitaId").asText().isBlank()) return false;
+                var receitaId = UUID.fromString(item.path("receitaId").asText());
+                var receita = receitas.findById(receitaId).orElse(null);
+                if (receita == null || !receita.getNome().equals(item.path("nome").asText())) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     private long gerarConsumos(Cardapio cardapio, LocalDate dia, Turno turno, List<Aluno> turma,

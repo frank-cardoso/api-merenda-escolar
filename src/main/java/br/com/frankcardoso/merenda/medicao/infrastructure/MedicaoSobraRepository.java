@@ -15,6 +15,9 @@ public interface MedicaoSobraRepository extends JpaRepository<MedicaoSobra, UUID
     Optional<MedicaoSobra> findByDataAndTurnoAndEscolaIdAndReceitaId(
         LocalDate data, Turno turno, int escolaId, UUID receitaId);
 
+    List<MedicaoSobra> findAllByDataAndTurnoAndEscolaIdOrderByReceitaId(
+        LocalDate data, Turno turno, int escolaId);
+
     /**
      * Totais do dia restritos aos itens do cardapio.
      *
@@ -46,7 +49,9 @@ public interface MedicaoSobraRepository extends JpaRepository<MedicaoSobra, UUID
     @Query("""
         select m.receitaId as receitaId,
                r.nome as nome,
+               sum(m.porcoesPreparadas) as preparadas,
                sum(m.porcoesServidas) as servidas,
+               sum(m.sobraNaoDistribuida) as sobra,
                sum(m.restoNoPrato) as resto,
                count(m) as amostra
         from MedicaoSobra m join Receita r on r.id = m.receitaId
@@ -56,6 +61,95 @@ public interface MedicaoSobraRepository extends JpaRepository<MedicaoSobra, UUID
         """)
     List<RestoReceita> restoPorReceita(@Param("inicio") LocalDate inicio,
         @Param("fim") LocalDate fim, @Param("turno") Turno turno);
+
+    @Query("""
+        select m.receitaId as receitaId,
+               r.nome as nome,
+               sum(m.porcoesPreparadas) as preparadas,
+               sum(m.porcoesServidas) as servidas,
+               sum(m.sobraNaoDistribuida) as sobra,
+               sum(m.restoNoPrato) as resto,
+               count(m) as amostra
+        from MedicaoSobra m join Receita r on r.id = m.receitaId
+        where m.data in :datas and m.turno = :turno
+        group by m.receitaId, r.nome
+        order by r.nome
+        """)
+    List<RestoReceita> restoPorReceitaNasDatas(@Param("datas") List<LocalDate> datas,
+        @Param("turno") Turno turno);
+
+    @Query("""
+        select m.data from MedicaoSobra m
+        where m.data in :datas and m.turno = :turno and m.receitaId in :receitas
+        group by m.data
+        having count(distinct m.receitaId) = :quantidadeReceitas
+        order by m.data
+        """)
+    List<LocalDate> datasComFechamentoCompleto(@Param("datas") List<LocalDate> datas,
+        @Param("turno") Turno turno, @Param("receitas") List<UUID> receitas,
+        @Param("quantidadeReceitas") long quantidadeReceitas);
+
+    @Query("""
+        select count(distinct m.data)
+        from MedicaoSobra m
+        where m.data between :inicio and :fim and m.turno = :turno
+        """)
+    long countFechamentos(@Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim,
+        @Param("turno") Turno turno);
+
+    @Query("""
+        select count(distinct m.data) from MedicaoSobra m
+        where m.data between :inicio and :fim and m.turno = :turno
+          and m.receitaId in :receitas
+        """)
+    long countFechamentosPorReceitas(@Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim,
+        @Param("turno") Turno turno, @Param("receitas") List<UUID> receitas);
+
+    @Query("""
+        select count(distinct m.data)
+        from MedicaoSobra m
+        where m.data between :inicio and :fim and m.turno = :turno and m.receitaId = :receita
+        """)
+    long countDiasPorReceita(@Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim,
+        @Param("turno") Turno turno, @Param("receita") UUID receita);
+
+    @Query("""
+        select count(distinct m.data) from MedicaoSobra m
+        where m.data in :datas and m.turno = :turno and m.receitaId in :receitas
+        """)
+    long countFechamentosNasDatas(@Param("datas") List<LocalDate> datas,
+        @Param("turno") Turno turno, @Param("receitas") List<UUID> receitas);
+
+    @Query("""
+        select count(distinct m.data) from MedicaoSobra m
+        where m.data in :datas and m.turno = :turno
+        """)
+    long countFechamentosNasDatas(@Param("datas") List<LocalDate> datas,
+        @Param("turno") Turno turno);
+
+    @Query("""
+        select count(distinct m.data) from MedicaoSobra m
+        where m.data in :datas and m.turno = :turno and m.receitaId = :receita
+        """)
+    long countDiasPorReceitaNasDatas(@Param("datas") List<LocalDate> datas,
+        @Param("turno") Turno turno, @Param("receita") UUID receita);
+
+    @Query("""
+        select distinct m.data
+        from MedicaoSobra m
+        where m.data between :inicio and :fim and m.turno = :turno
+        order by m.data
+        """)
+    List<LocalDate> datasComFechamento(@Param("inicio") LocalDate inicio,
+        @Param("fim") LocalDate fim, @Param("turno") Turno turno);
+
+    @Query("""
+        select distinct m.data from MedicaoSobra m
+        where m.data between :inicio and :fim and m.turno = :turno
+          and m.receitaId in :receitas order by m.data
+        """)
+    List<LocalDate> datasComFechamentoPorReceitas(@Param("inicio") LocalDate inicio,
+        @Param("fim") LocalDate fim, @Param("turno") Turno turno, @Param("receitas") List<UUID> receitas);
 
     interface ResumoDia {
         long getPreparadas();
@@ -68,7 +162,9 @@ public interface MedicaoSobraRepository extends JpaRepository<MedicaoSobra, UUID
     interface RestoReceita {
         UUID getReceitaId();
         String getNome();
+        long getPreparadas();
         long getServidas();
+        long getSobra();
         long getResto();
         long getAmostra();
     }

@@ -23,8 +23,27 @@ public record IndicadoresLogisticosInput(
     @JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate inicioHistorico, Turno turno,
     int quantidadePlanejada, long consumosRegistrados, long alunosUnicos,
     BigDecimal metaPercentual, List<ContagemTurma> turmas, List<ContagemItem> itens,
-    MedicaoDoDia medicaoDoDia, List<ReceitaMedida> receitasMedidas
+    MedicaoDoDia medicaoDoDia, List<ReceitaMedida> receitasMedidas,
+    List<ReceitaFechamento> fechamentosDoMes, List<ReceitaFechamento> fechamentosDaSemana,
+    long quantidadeFechamentosDoMes, long quantidadeFechamentosDaSemana,
+    List<LocalDate> datasFechamentosDoMes, List<UUID> receitasSelecionadas,
+    List<LocalDate> datasSelecionadas, boolean coberturaFechamentosCompleta
 ) {
+    public IndicadoresLogisticosInput(
+        LocalDate dataReferencia, LocalDate inicioHistorico, Turno turno,
+        int quantidadePlanejada, long consumosRegistrados, long alunosUnicos,
+        BigDecimal metaPercentual, List<ContagemTurma> turmas, List<ContagemItem> itens,
+        MedicaoDoDia medicaoDoDia, List<ReceitaMedida> receitasMedidas,
+        List<ReceitaFechamento> fechamentosDoMes, List<ReceitaFechamento> fechamentosDaSemana,
+        long quantidadeFechamentosDoMes, long quantidadeFechamentosDaSemana,
+        List<LocalDate> datasFechamentosDoMes
+    ) {
+        this(dataReferencia, inicioHistorico, turno, quantidadePlanejada, consumosRegistrados,
+            alunosUnicos, metaPercentual, turmas, itens, medicaoDoDia, receitasMedidas,
+            fechamentosDoMes, fechamentosDaSemana, quantidadeFechamentosDoMes,
+            quantidadeFechamentosDaSemana, datasFechamentosDoMes, List.of(), List.of(), false);
+    }
+
     public record ContagemTurma(String turma, long consumosRegistrados, long alunosUnicos) {}
     public record ContagemItem(String item, long planejamentos, long execucoesRegistradas,
                                int escolas, List<String> origens) {}
@@ -38,5 +57,8 @@ public record IndicadoresLogisticosInput(
      */
     public record ReceitaMedida(UUID receitaId, String nome, List<IngredienteRef> ingredientes,
                                 long porcoesServidas, long restoNoPrato, long amostra) {}
+    public record ReceitaFechamento(UUID receitaId, String nome, long porcoesPreparadas,
+                                    long porcoesServidas, long sobraNaoDistribuida,
+                                    long restoNoPrato, long fechamentos) {}
     public record IngredienteRef(UUID id, String nome) {}
 }

@@ -128,8 +128,8 @@ class RelatorioIAWorkerTest {
         when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(analisePort.analisar(any())).thenReturn(new AnaliseLogisticaOutput(
             "Resumo",
-            "BAIXA",
-            "ALTO",
+            "VALOR_INVALIDO_DO_MODELO",
+            "OUTRO_VALOR_INVALIDO",
             List.of("Evidencia"),
             List.of("Recomendacao"),
             "Limitacao"
@@ -178,7 +178,7 @@ class RelatorioIAWorkerTest {
             "Os registros correspondem a 0,67% do planejamento (2 de 300 refeicoes).",
             "A meta interna de execucao de 80,00% nao foi atingida, 79,33 pontos percentuais abaixo.");
 
-        // O modelo devolveu BAIXA/ALTO; quem classifica e o codigo, nao ele.
+        // O modelo devolveu valores fora do enum; quem classifica e o codigo, nao ele.
         var analiseSalva = objectMapper.readTree(relatorio.getResultadoJson());
         assertThat(analiseSalva.path("nivelAceitacao").asText()).isEqualTo("NAO_AVALIAVEL");
         assertThat(analiseSalva.path("riscoDesperdicio").asText()).isEqualTo("NAO_AVALIAVEL");

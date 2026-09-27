@@ -38,7 +38,9 @@ public class PythonIndicadoresLogisticosAdapter implements IndicadoresLogisticos
             .retrieve().body(IndicadoresLogisticos.class);
         if (result == null || !"3".equals(result.schemaVersion())
             || !"DISPONIVEL".equals(result.status()) || result.execucaoPlanejamento() == null
-            || result.atendimentos() == null || result.topComidas() == null || result.porTurma() == null
+            || result.atendimentos() == null || result.topComidas() == null
+            || result.aceitacaoItens() == null || result.aceitacaoItensSemana() == null
+            || result.porTurma() == null
             || result.avisos() == null
             || result.aceitacao() == null || result.desperdicio() == null
             || result.ingredientes() == null || !input.dataReferencia().equals(result.dataReferencia())

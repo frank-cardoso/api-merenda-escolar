@@ -26,7 +26,7 @@ public record ConclusaoDeterministica(
     private static final Locale PT_BR = Locale.of("pt", "BR");
 
     private static final String LIMITE_ACEITACAO =
-        "Aceitacao alimentar nao e avaliavel: nao ha medicao de resto no prato para este turno.";
+        "Aceitacao alimentar nao e avaliavel: nao ha medicao de resto no prato no periodo analisado.";
     private static final String LIMITE_ASSOCIACAO =
         "Ingrediente acima dos pratos sem ele e associacao observada, nao causa comprovada: o resto "
             + "e medido por prato inteiro, entao ingredientes servidos juntos dividem o mesmo "
@@ -142,12 +142,12 @@ public record ConclusaoDeterministica(
     ) {
         var afirmacoes = new ArrayList<String>();
         if (disponivel(aceitacao == null ? null : aceitacao.status())) {
-            afirmacoes.add(("A aceitacao medida foi de %s%% (%d porcoes servidas, %d de resto no "
+            afirmacoes.add(("A aceitacao medida no periodo foi de %s%% (%d porcoes servidas, %d de resto no "
                 + "prato), nivel %s.").formatted(percentual(aceitacao.percentual()),
                     aceitacao.porcoesServidas(), aceitacao.restoNoPrato(), aceitacao.nivel()));
         }
         if (disponivel(desperdicio == null ? null : desperdicio.status())) {
-            afirmacoes.add(("O desperdicio medido foi de %s%% do preparado (%d de sobra na cuba e "
+            afirmacoes.add(("O desperdicio medido no periodo foi de %s%% do preparado (%d de sobra na cuba e "
                 + "%d de resto no prato sobre %d porcoes preparadas), risco %s.").formatted(
                     percentual(desperdicio.percentual()), desperdicio.sobraNaoDistribuida(),
                     desperdicio.restoNoPrato(), desperdicio.porcoesPreparadas(),

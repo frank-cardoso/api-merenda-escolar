@@ -26,8 +26,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -100,11 +102,21 @@ public class RelatorioIAWorker {
             .orElseThrow(() -> new RelatorioNaoEncontradoException(relatorioId));
 
         try {
-            ConsolidacaoConsumoResponse consolidacao = consolidacaoService.consolidar(
-                relatorio.getDataReferencia(), relatorio.getTurno());
-            var indicadores = indicadoresService.calcular(consolidacao.data(), consolidacao.turno());
+            var selecionadas = receitasSelecionadas(relatorio);
+            var datasSelecionadas = datasSelecionadas(relatorio);
+            ConsolidacaoConsumoResponse consolidacao = consolidarComReferencia(
+                relatorio.getDataReferencia(), relatorio.getTurno(), datasSelecionadas);
+            var indicadores = selecionadas.isEmpty() && datasSelecionadas.isEmpty()
+                ? indicadoresService.calcular(consolidacao.data(), consolidacao.turno())
+                : indicadoresService.calcular(consolidacao.data(), consolidacao.turno(), selecionadas,
+                    datasSelecionadas);
+            if (indicadores == null) {
+                indicadores = IndicadoresLogisticos.indisponivel(
+                    consolidacao.data(), consolidacao.turno());
+            }
             consolidacao = alinharConsolidacaoAFotografia(consolidacao, indicadores);
-            AnaliseLogisticaInput input = criarInput(consolidacao, preverConsumo(consolidacao), indicadores);
+            AnaliseLogisticaInput input = criarInput(consolidacao, preverConsumo(consolidacao), indicadores,
+                selecionadas);
 
             relatorio.registrarIndicadores(escreverJson(indicadores));
 
@@ -115,9 +127,12 @@ public class RelatorioIAWorker {
             if (resultado.saida() == null) {
                 throw new IllegalStateException("O provedor de IA retornou resposta vazia");
             }
-            resultado.saida().validar();
             var saida = comClassificacoesDeterministicas(
                 resultado.saida(), input.conclusaoDeterministica());
+            // A classificacao e responsabilidade do codigo. O modelo pode devolver um valor
+            // textual fora do enum, mas isso nao deve invalidar um relatorio cuja conclusao
+            // deterministica ja tem os dois niveis corretos.
+            saida.validar();
 
             relatorio.concluir(resultado.provedor(), resultado.modelo(), escreverJson(saida),
                 saida.resumoExecutivo(), Instant.now(clock));
@@ -128,20 +143,67 @@ public class RelatorioIAWorker {
         }
     }
 
+    private ConsolidacaoConsumoResponse consolidarComReferencia(
+        LocalDate dataReferencia, br.com.frankcardoso.merenda.fila.domain.Turno turno,
+        List<LocalDate> datasSelecionadas) {
+        try {
+            return consolidacaoService.consolidar(dataReferencia, turno);
+        } catch (RuntimeException excecao) {
+            if (datasSelecionadas.isEmpty()) throw excecao;
+
+            var dataComCardapio = datasSelecionadas.stream().max(LocalDate::compareTo)
+                .orElseThrow();
+            var escopo = consolidacaoService.consolidar(dataComCardapio, turno);
+            // A data de referência continua sendo a data escolhida no dashboard; somente a
+            // fotografia operacional vem do último dia em que o cardápio selecionado existiu.
+            return new ConsolidacaoConsumoResponse(
+                dataReferencia, escopo.turno(), escopo.cardapioId(), escopo.cardapio(),
+                escopo.itensCardapio(), escopo.receitasCardapio(), escopo.quantidadePlanejada(),
+                escopo.consumosAutorizados(), escopo.tentativasBloqueadas(),
+                escopo.taxaConsumoPlanejado(), escopo.sobraEstimada());
+        }
+    }
+
+    private List<UUID> receitasSelecionadas(RelatorioIA relatorio) {
+        var json = relatorio.getReceitaIdsJson();
+        if (json == null || json.isBlank()) return List.of();
+        return Arrays.stream(json.split(",")).map(UUID::fromString).toList();
+    }
+
+    private List<LocalDate> datasSelecionadas(RelatorioIA relatorio) {
+        var json = relatorio.getDatasSelecionadasJson();
+        if (json == null || json.isBlank()) return List.of();
+        return Arrays.stream(json.split(",")).map(LocalDate::parse).toList();
+    }
+
     private AnaliseLogisticaInput criarInput(
         ConsolidacaoConsumoResponse consolidacao,
         ResultadoPrevisao resultadoPrevisao,
-        IndicadoresLogisticos indicadores
+        IndicadoresLogisticos indicadores,
+        List<UUID> receitasSelecionadas
     ) {
         var ranking = historicoService.rankingDosPioresItens(consolidacao.data(), consolidacao.turno());
+        var escopoSelecionado = !receitasSelecionadas.isEmpty();
+        var receitasDoEscopo = escopoSelecionado
+            ? receitasSelecionadas
+            : consolidacao.receitasCardapio();
         var itensComTaxa = historicoService.itensDoCardapioComTaxa(
-            consolidacao.data(), consolidacao.turno(), consolidacao.receitasCardapio());
+            consolidacao.data(), consolidacao.turno(), receitasDoEscopo);
+        var itensDoEscopo = escopoSelecionado && indicadores.aceitacaoItens() != null
+            ? indicadores.aceitacaoItens().stream()
+                .map(IndicadoresLogisticos.AceitacaoItem::item).toList()
+            : consolidacao.itensCardapio();
+        var nomeDoEscopo = escopoSelecionado
+            ? "Cardápio selecionado: " + String.join(", ", itensDoEscopo)
+            : consolidacao.cardapio();
 
         return new AnaliseLogisticaInput(
             consolidacao.data(),
             consolidacao.turno(),
-            consolidacao.cardapio(),
-            consolidacao.itensCardapio(),
+            nomeDoEscopo,
+            itensDoEscopo,
+            indicadores.aceitacaoItens() == null ? List.of() : indicadores.aceitacaoItens().stream()
+                .map(IndicadoresLogisticos.AceitacaoItem::item).toList(),
             consolidacao.quantidadePlanejada(),
             consolidacao.consumosAutorizados(),
             consolidacao.tentativasBloqueadas(),

@@ -23,7 +23,7 @@ class ConclusaoDeterministicaTest {
             new IndicadoresLogisticos.ExecucaoPlanejamento(300, 91, new BigDecimal("30.33"),
                 new BigDecimal("80.00"), new BigDecimal("-49.67"), "ABAIXO"),
             new IndicadoresLogisticos.Atendimentos(91, 0),
-            List.of(), List.of(), aceitacao, desperdicio, ingredientes, null, List.of());
+            List.of(), List.of(), List.of(), 0, 0, List.of(), List.of(), aceitacao, desperdicio, ingredientes, null, List.of());
     }
 
     @Test
@@ -51,7 +51,7 @@ class ConclusaoDeterministicaTest {
         assertThat(conclusao.nivelAceitacao()).isEqualTo("ALTA");
         assertThat(conclusao.riscoDesperdicio()).isEqualTo("MEDIO");
         assertThat(conclusao.afirmacoes()).contains(
-            "A aceitacao medida foi de 93,68% (364 porcoes servidas, 23 de resto no prato), nivel ALTA.",
+            "A aceitacao medida no periodo foi de 93,68% (364 porcoes servidas, 23 de resto no prato), nivel ALTA.",
             "Resto maior nos pratos que levam o ingrediente do que nos que nao levam "
                 + "(media da janela 9,43%): chuchu 29,89% com contra 9,43% sem (20,46 pp, n=78).");
         // Sem ressalva de "nao e avaliavel" quando existe medicao.

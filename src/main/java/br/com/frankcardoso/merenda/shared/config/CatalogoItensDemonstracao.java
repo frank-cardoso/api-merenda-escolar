@@ -71,6 +71,16 @@ public class CatalogoItensDemonstracao {
         return new Cardapio(escolhidos, rng);
     }
 
+    /** Cardápio estável usado pela demonstração da análise de aceitação. */
+    public Cardapio cardapioPrincipal(Random rng) {
+        var nomes = List.of("Arroz branco", "Macarrao ao sugo", "Leite com achocolatado",
+            "Cuscuz", "Maca");
+        var escolhidos = todosOsItens().stream()
+            .filter(item -> nomes.contains(item.nome()))
+            .toList();
+        return escolhidos.size() == nomes.size() ? new Cardapio(escolhidos, rng) : sortearCardapio(rng);
+    }
+
     /**
      * Fator de adesao esperado para um cardapio, relativo a media do catalogo.
      *
@@ -121,8 +131,8 @@ public class CatalogoItensDemonstracao {
             while ((linha = leitor.readLine()) != null) {
                 if (linha.isBlank()) continue;
                 String[] campos = linha.split("\t", -1);
-                var item = new Item(campos[0], Double.parseDouble(campos[1]));
-                if (GRUPO_BAIXA_EXECUCAO.equals(campos[2])) baixa.add(item);
+                var item = new Item(campos[0], campos[1], Double.parseDouble(campos[2]));
+                if (GRUPO_BAIXA_EXECUCAO.equals(campos[3])) baixa.add(item);
                 else alta.add(item);
             }
         } catch (IOException | NumberFormatException exception) {
@@ -130,15 +140,19 @@ public class CatalogoItensDemonstracao {
         }
     }
 
-    public record Item(String nome, double taxaExecucao) {
+    public record Item(String id, String nome, double taxaExecucao) {
     }
 
     public record Cardapio(List<Item> itens, String nomeDaRefeicao, String comoJson) {
 
         static final Cardapio PADRAO = new Cardapio(
-            List.of(new Item("Arroz branco", 0.44), new Item("Feijao carioca", 0.44)),
+            List.of(
+                new Item("6ce7a969-7c2b-5a21-b072-594a4412ab8b", "Arroz branco", 0.44),
+                new Item("2f723cf1-ddd6-58e2-881e-3ab45db8cd2d", "Feijao carioca", 0.44)),
             "Arroz e feijao",
-            "[{\"nome\":\"Arroz branco\"},{\"nome\":\"Feijao carioca\"}]");
+            "[{\"receitaId\":\"6ce7a969-7c2b-5a21-b072-594a4412ab8b\",\"nome\":\"Arroz branco\"},"
+                + "{\"receitaId\":\"2f723cf1-ddd6-58e2-881e-3ab45db8cd2d\","
+                + "\"nome\":\"Feijao carioca\"}]");
 
         Cardapio(List<Item> itens, Random rng) {
             this(itens, montarNome(itens), montarJson(itens, rng));
@@ -150,8 +164,8 @@ public class CatalogoItensDemonstracao {
 
         private static String montarJson(List<Item> itens, Random rng) {
             return itens.stream()
-                .map(item -> "{\"nome\":\"%s\",\"quantidade\":\"%d kg\"}"
-                    .formatted(item.nome(), 4 + rng.nextInt(12)))
+                .map(item -> "{\"receitaId\":\"%s\",\"nome\":\"%s\",\"quantidade\":\"%d kg\"}"
+                    .formatted(item.id(), item.nome(), 4 + rng.nextInt(12)))
                 .collect(Collectors.joining(",", "[", "]"));
         }
     }
