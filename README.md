@@ -187,3 +187,17 @@ Se o Python falhar, o endpoint retorna `status=INDISPONIVEL`, indicadores nulos 
 O relatório continua com as informações disponíveis. A fila não depende dessa integração.
 Respostas de IA são validadas estruturalmente (campos e classificações); isso não garante
 veracidade da narrativa. Números do dashboard nunca vêm da resposta do LLM.
+
+## Estado atual — análise por cardápio
+
+- A análise IA parte de um cardápio servido selecionado no período de 30 dias.
+- Cardápios iguais são agrupados por suas receitas vinculadas ao catálogo.
+- A amostra usa somente datas em que todos os itens do cardápio possuem fechamento completo.
+- A geração exige no mínimo 20 dias completos; cada item selecionado exige pelo menos 3 dias medidos.
+- É possível analisar o cardápio inteiro ou somente parte dos itens, mantendo as datas do cardápio selecionado.
+- O backend reconfirma as datas no banco e não aceita datas parciais para compor os indicadores.
+- Alterações no fechamento podem modificar indicadores e relatórios futuros; relatórios já persistidos permanecem como fotografia do momento da geração.
+
+Os indicadores operacionais do dashboard usam o dia e turno de referência. Aceitação e desperdício
+usam os fechamentos históricos do escopo selecionado. Autorizações da fila não comprovam presença,
+ingestão, aceitação ou desperdício.
