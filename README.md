@@ -201,3 +201,11 @@ veracidade da narrativa. Números do dashboard nunca vêm da resposta do LLM.
 Os indicadores operacionais do dashboard usam o dia e turno de referência. Aceitação e desperdício
 usam os fechamentos históricos do escopo selecionado. Autorizações da fila não comprovam presença,
 ingestão, aceitação ou desperdício.
+
+## Pendências e próximos passos
+
+- Registrar presença elegível para permitir adesão e metas confiáveis por turma.
+- Avaliar a necessidade de filtro específico por turma no dashboard e nos relatórios.
+- Separar, em uma futura integração, dados reais de dados sintéticos e de demonstração.
+- Definir a política de invalidação ou reprocessamento de relatórios quando um fechamento for editado.
+- Revisar os indicadores e os textos quando houver volume suficiente de dados reais.
