@@ -34,16 +34,10 @@ public class DadosIniciaisConfig {
                 ));
             }
 
-            LocalDate hoje = LocalDate.now(clock.withZone(ZONA_OPERACIONAL));
-            for (Turno turno : Turno.values()) {
-                if (!cardapios.existsByDataAndTurno(hoje, turno)) {
-                    cardapios.save(new Cardapio(UUID.randomUUID(), hoje, turno,
-                        "Arroz, feijao, frango e salada",
-                        "Cardapio demonstrativo do prototipo",
-                        "[\"arroz\",\"feijao\",\"frango\",\"salada\"]",
-                        300, true));
-                }
-            }
+            // Os cardapios ficam a cargo do DadosDemonstracaoLoader, que usa o mesmo
+            // vocabulario de itens do historico sintetico. Criar aqui tambem faria o cardapio
+            // de hoje nascer com nomes que o historico nao conhece (este runner roda antes),
+            // impedindo a analise de relacionar prato com execucao.
         };
     }
 }

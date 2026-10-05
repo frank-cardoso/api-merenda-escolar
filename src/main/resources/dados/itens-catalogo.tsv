@@ -1,0 +1,49 @@
+receita_id	item	taxa_execucao	grupo
+97cdd182-3767-5284-9999-5a05583856f2	Carne de panela com batata	0.000	BAIXA_EXECUCAO
+5b8da38a-ad96-5622-9a33-6cb46962bff4	Pure de mandioca	0.021	BAIXA_EXECUCAO
+2fbd4adb-108b-5436-b029-1072004a7cbc	Couve com farofa	0.022	BAIXA_EXECUCAO
+57892dbd-226e-5042-9150-ecf305a83d0f	Mandioca cozida	0.024	BAIXA_EXECUCAO
+2b907759-340a-5ede-88d3-7739822c9e55	Molho de carne moida	0.035	BAIXA_EXECUCAO
+cca859b8-2483-5cf4-ae24-67ba8ea4cb37	Pure de batata	0.036	BAIXA_EXECUCAO
+4f15f44d-d9a3-5a55-8fd0-0b738c2e28a3	Polenta cozida	0.036	BAIXA_EXECUCAO
+bb7ca364-cc13-59ee-a7ed-1d5136b5b6e3	Beterraba cozida	0.048	BAIXA_EXECUCAO
+d02df37a-5ddb-5d71-b171-5b2f6e16b1c8	Ovo cozido	0.048	BAIXA_EXECUCAO
+b99afe70-33ca-5504-9840-345a82dc68a3	Cenoura ralada	0.050	BAIXA_EXECUCAO
+6f1d5964-e195-53e5-b25d-c4128c0b139a	Iscas de frango acebolada	0.050	BAIXA_EXECUCAO
+78b49edf-4e8b-5161-8bc0-ae05e86853d0	Carne moida tipo pastel	0.053	BAIXA_EXECUCAO
+4d3eeba1-ad77-55d4-9ed8-296ad424338e	Molho de frango desfiado	0.054	BAIXA_EXECUCAO
+8d81f03d-d710-5316-abc7-1763074292b4	Cenoura refogada	0.057	BAIXA_EXECUCAO
+b94bd7bf-252f-5c97-9722-163c6d7e2412	Brocolis	0.058	BAIXA_EXECUCAO
+e9939964-7e5f-542e-9526-0c743b00ffb0	Salada de tomate	0.058	BAIXA_EXECUCAO
+b6cbc98d-85cf-5628-a89e-560cfa264267	Coxa e sobrecoxa de frango ao molho de tomate	0.061	BAIXA_EXECUCAO
+877577bb-d17f-5df7-b369-9be72e456774	Chuchu	0.063	BAIXA_EXECUCAO
+988137c4-1f9b-556f-a585-e26e4827e310	Carne de panela	0.066	BAIXA_EXECUCAO
+79eb9045-ebdc-53c5-9ede-a0e5d2b7b378	Requeijao caseiro	0.067	BAIXA_EXECUCAO
+54e9ea4c-63a9-5952-9616-b24ee0e6a0fa	Frango dourado, acebolado	0.069	BAIXA_EXECUCAO
+ddeef647-cce4-5236-a3b1-dece44ed098e	Couve flor	0.069	BAIXA_EXECUCAO
+21e707b3-6560-583f-a5f2-f307b82911fd	Salada de alface	0.072	BAIXA_EXECUCAO
+3d6a3f96-fe67-5811-98e8-2381c1ec5a70	Beterraba ralada	0.072	BAIXA_EXECUCAO
+045210e2-4f88-5f7b-950a-db8c8dacab7e	Repolho	0.077	BAIXA_EXECUCAO
+e8c59186-e147-5530-a4ba-b728fd7852c3	Arroz com galinha	0.077	BAIXA_EXECUCAO
+2fb8016f-a7e8-5297-ba7c-fbdbc176e301	Molho de tomate caseiro	0.078	BAIXA_EXECUCAO
+f8c11e3f-147e-575c-879e-d8653a2b447f	Chuchu com tempero verde	0.084	BAIXA_EXECUCAO
+094e6e93-4244-5901-b94b-836b2b9b21be	Carne suina acebolada	0.085	BAIXA_EXECUCAO
+b4612635-bcf9-56d3-bc95-ef912ff6a829	Cenoura cozida	0.086	BAIXA_EXECUCAO
+d0f748b6-0ca4-5794-9480-45981f00672c	Ensopado de mandioca	0.086	BAIXA_EXECUCAO
+47fbd9af-ac57-5250-a6e2-0018c6bd21c0	Couve	0.094	BAIXA_EXECUCAO
+500ccd6c-b321-531f-81ae-3999b578c2e4	Pure de moranga	0.100	BAIXA_EXECUCAO
+9c858519-faab-50d6-9561-8f90f4f84567	Guisado com moranga	0.102	BAIXA_EXECUCAO
+3331b130-8600-5a59-9e35-f970f9ea497e	Ovo mexido	0.121	BAIXA_EXECUCAO
+b85fd879-2256-524c-b715-7f9cb93ccd01	Bolo de maca, sem acucar	0.123	BAIXA_EXECUCAO
+6ce7a969-7c2b-5a21-b072-594a4412ab8b	Arroz branco	0.437	ALTA_EXECUCAO
+2f723cf1-ddd6-58e2-881e-3ab45db8cd2d	Feijao carioca	0.437	ALTA_EXECUCAO
+153737d9-caa6-55d5-b086-f7e83fdab4d2	Pao com manteiga	0.437	ALTA_EXECUCAO
+6753aa6f-0f7e-5208-8cd6-9e7a8733ef22	Leite com achocolatado	0.437	ALTA_EXECUCAO
+add956e1-36ad-584e-b1e4-a4a8db28315f	Banana	0.437	ALTA_EXECUCAO
+1b450f5b-ecde-5880-ad0a-91ce0920069d	Maca	0.437	ALTA_EXECUCAO
+79ca1872-52e0-59dd-af29-543b793c0860	Macarrao ao sugo	0.437	ALTA_EXECUCAO
+eed1d0ec-938c-53ef-94b9-626452f5fbd2	Sopa de legumes	0.437	ALTA_EXECUCAO
+9bf7d50c-378c-58f7-ba1a-0dccafffc54c	Bolacha doce	0.437	ALTA_EXECUCAO
+84f7e794-a400-5d46-9efe-1c8a8f2f711d	Suco de fruta natural	0.437	ALTA_EXECUCAO
+0db97b08-9e92-541d-b2d2-1bc810f8fbe8	Iogurte	0.437	ALTA_EXECUCAO
+b6f014a3-eaad-57c0-8ee9-24eb9abb819a	Cuscuz	0.437	ALTA_EXECUCAO

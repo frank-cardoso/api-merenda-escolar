@@ -1,0 +1,75 @@
+receita_id	item	ingrediente_id	ingrediente
+97cdd182-3767-5284-9999-5a05583856f2	Carne de panela com batata	daf81529-dff4-5f8d-b167-743995aee9c8	carne bovina
+97cdd182-3767-5284-9999-5a05583856f2	Carne de panela com batata	2e7a8f47-f741-57b0-b820-94b0887cc9ec	batata
+5b8da38a-ad96-5622-9a33-6cb46962bff4	Pure de mandioca	fca4a77d-d53e-5067-b4c7-3710c8daef10	mandioca
+5b8da38a-ad96-5622-9a33-6cb46962bff4	Pure de mandioca	6e3e0304-3c36-595c-a8ad-6637d646991b	leite
+2fbd4adb-108b-5436-b029-1072004a7cbc	Couve com farofa	1210ed76-1f06-5bc1-aed3-85fe5346b713	couve
+2fbd4adb-108b-5436-b029-1072004a7cbc	Couve com farofa	dd9a7995-a1fc-51fd-9bcf-3d2248a26cb1	farinha de mandioca
+57892dbd-226e-5042-9150-ecf305a83d0f	Mandioca cozida	fca4a77d-d53e-5067-b4c7-3710c8daef10	mandioca
+2b907759-340a-5ede-88d3-7739822c9e55	Molho de carne moida	daf81529-dff4-5f8d-b167-743995aee9c8	carne bovina
+2b907759-340a-5ede-88d3-7739822c9e55	Molho de carne moida	61622c8b-bfea-5e9f-a5d5-7350befefe96	tomate
+cca859b8-2483-5cf4-ae24-67ba8ea4cb37	Pure de batata	2e7a8f47-f741-57b0-b820-94b0887cc9ec	batata
+cca859b8-2483-5cf4-ae24-67ba8ea4cb37	Pure de batata	6e3e0304-3c36-595c-a8ad-6637d646991b	leite
+4f15f44d-d9a3-5a55-8fd0-0b738c2e28a3	Polenta cozida	0fc0da14-4704-5c09-9ff1-c2b0ca9b5995	fuba
+bb7ca364-cc13-59ee-a7ed-1d5136b5b6e3	Beterraba cozida	8da25238-b781-5920-935b-9d2178e0bc0f	beterraba
+d02df37a-5ddb-5d71-b171-5b2f6e16b1c8	Ovo cozido	77d35246-05cb-5872-bb2b-62690b319e98	ovo
+b99afe70-33ca-5504-9840-345a82dc68a3	Cenoura ralada	cae55f74-b6d7-50fd-b9f9-1b1eabc8539a	cenoura
+6f1d5964-e195-53e5-b25d-c4128c0b139a	Iscas de frango acebolada	4475eef7-31be-5406-9a43-e260bff24c10	frango
+6f1d5964-e195-53e5-b25d-c4128c0b139a	Iscas de frango acebolada	ce543a5a-04b4-5aca-a4be-be9a75fc147f	cebola
+78b49edf-4e8b-5161-8bc0-ae05e86853d0	Carne moida tipo pastel	daf81529-dff4-5f8d-b167-743995aee9c8	carne bovina
+78b49edf-4e8b-5161-8bc0-ae05e86853d0	Carne moida tipo pastel	ce543a5a-04b4-5aca-a4be-be9a75fc147f	cebola
+4d3eeba1-ad77-55d4-9ed8-296ad424338e	Molho de frango desfiado	4475eef7-31be-5406-9a43-e260bff24c10	frango
+4d3eeba1-ad77-55d4-9ed8-296ad424338e	Molho de frango desfiado	61622c8b-bfea-5e9f-a5d5-7350befefe96	tomate
+8d81f03d-d710-5316-abc7-1763074292b4	Cenoura refogada	cae55f74-b6d7-50fd-b9f9-1b1eabc8539a	cenoura
+8d81f03d-d710-5316-abc7-1763074292b4	Cenoura refogada	ce543a5a-04b4-5aca-a4be-be9a75fc147f	cebola
+b94bd7bf-252f-5c97-9722-163c6d7e2412	Brocolis	b8fd7bb4-1b7f-5be1-8ba1-db9bd389b472	brocolis
+e9939964-7e5f-542e-9526-0c743b00ffb0	Salada de tomate	61622c8b-bfea-5e9f-a5d5-7350befefe96	tomate
+b6cbc98d-85cf-5628-a89e-560cfa264267	Coxa e sobrecoxa de frango ao molho de tomate	4475eef7-31be-5406-9a43-e260bff24c10	frango
+b6cbc98d-85cf-5628-a89e-560cfa264267	Coxa e sobrecoxa de frango ao molho de tomate	61622c8b-bfea-5e9f-a5d5-7350befefe96	tomate
+877577bb-d17f-5df7-b369-9be72e456774	Chuchu	4374c52f-8a06-53e6-9a78-622c07476a5c	chuchu
+988137c4-1f9b-556f-a585-e26e4827e310	Carne de panela	daf81529-dff4-5f8d-b167-743995aee9c8	carne bovina
+79eb9045-ebdc-53c5-9ede-a0e5d2b7b378	Requeijao caseiro	6e3e0304-3c36-595c-a8ad-6637d646991b	leite
+54e9ea4c-63a9-5952-9616-b24ee0e6a0fa	Frango dourado, acebolado	4475eef7-31be-5406-9a43-e260bff24c10	frango
+54e9ea4c-63a9-5952-9616-b24ee0e6a0fa	Frango dourado, acebolado	ce543a5a-04b4-5aca-a4be-be9a75fc147f	cebola
+ddeef647-cce4-5236-a3b1-dece44ed098e	Couve flor	c9ee2a79-d11a-5849-87c3-fccd783df318	couve flor
+21e707b3-6560-583f-a5f2-f307b82911fd	Salada de alface	a8e05e84-7977-5bcb-a5ef-74280cbebbb5	alface
+3d6a3f96-fe67-5811-98e8-2381c1ec5a70	Beterraba ralada	8da25238-b781-5920-935b-9d2178e0bc0f	beterraba
+045210e2-4f88-5f7b-950a-db8c8dacab7e	Repolho	34ad5b6f-f330-5678-a3f0-2e285a08a002	repolho
+e8c59186-e147-5530-a4ba-b728fd7852c3	Arroz com galinha	f3457ed7-d06f-5a55-a92f-04697df571e0	arroz
+e8c59186-e147-5530-a4ba-b728fd7852c3	Arroz com galinha	4475eef7-31be-5406-9a43-e260bff24c10	frango
+2fb8016f-a7e8-5297-ba7c-fbdbc176e301	Molho de tomate caseiro	61622c8b-bfea-5e9f-a5d5-7350befefe96	tomate
+f8c11e3f-147e-575c-879e-d8653a2b447f	Chuchu com tempero verde	4374c52f-8a06-53e6-9a78-622c07476a5c	chuchu
+f8c11e3f-147e-575c-879e-d8653a2b447f	Chuchu com tempero verde	ea434b56-8b5f-5b55-84d6-d22ca415c406	cebolinha
+094e6e93-4244-5901-b94b-836b2b9b21be	Carne suina acebolada	0c163975-2dcb-524f-a0a8-852b792140a5	carne suina
+094e6e93-4244-5901-b94b-836b2b9b21be	Carne suina acebolada	ce543a5a-04b4-5aca-a4be-be9a75fc147f	cebola
+b4612635-bcf9-56d3-bc95-ef912ff6a829	Cenoura cozida	cae55f74-b6d7-50fd-b9f9-1b1eabc8539a	cenoura
+d0f748b6-0ca4-5794-9480-45981f00672c	Ensopado de mandioca	fca4a77d-d53e-5067-b4c7-3710c8daef10	mandioca
+d0f748b6-0ca4-5794-9480-45981f00672c	Ensopado de mandioca	61622c8b-bfea-5e9f-a5d5-7350befefe96	tomate
+47fbd9af-ac57-5250-a6e2-0018c6bd21c0	Couve	1210ed76-1f06-5bc1-aed3-85fe5346b713	couve
+500ccd6c-b321-531f-81ae-3999b578c2e4	Pure de moranga	6c6c17d0-0d61-54c8-8893-8ee1ecf02084	moranga
+500ccd6c-b321-531f-81ae-3999b578c2e4	Pure de moranga	6e3e0304-3c36-595c-a8ad-6637d646991b	leite
+9c858519-faab-50d6-9561-8f90f4f84567	Guisado com moranga	6c6c17d0-0d61-54c8-8893-8ee1ecf02084	moranga
+9c858519-faab-50d6-9561-8f90f4f84567	Guisado com moranga	daf81529-dff4-5f8d-b167-743995aee9c8	carne bovina
+3331b130-8600-5a59-9e35-f970f9ea497e	Ovo mexido	77d35246-05cb-5872-bb2b-62690b319e98	ovo
+3331b130-8600-5a59-9e35-f970f9ea497e	Ovo mexido	6e3e0304-3c36-595c-a8ad-6637d646991b	leite
+b85fd879-2256-524c-b715-7f9cb93ccd01	Bolo de maca, sem acucar	2eb5e6de-8bbd-5ff5-92fd-5ebe1c089ce9	maca
+b85fd879-2256-524c-b715-7f9cb93ccd01	Bolo de maca, sem acucar	557b626e-baf3-50a5-a552-8c3f025c306e	trigo
+b85fd879-2256-524c-b715-7f9cb93ccd01	Bolo de maca, sem acucar	77d35246-05cb-5872-bb2b-62690b319e98	ovo
+6ce7a969-7c2b-5a21-b072-594a4412ab8b	Arroz branco	f3457ed7-d06f-5a55-a92f-04697df571e0	arroz
+2f723cf1-ddd6-58e2-881e-3ab45db8cd2d	Feijao carioca	e5178002-79a7-52d0-b99f-66d5245ca393	feijao
+153737d9-caa6-55d5-b086-f7e83fdab4d2	Pao com manteiga	557b626e-baf3-50a5-a552-8c3f025c306e	trigo
+153737d9-caa6-55d5-b086-f7e83fdab4d2	Pao com manteiga	5c91d292-c5d8-520a-8fb6-a540ed51f3d5	manteiga
+6753aa6f-0f7e-5208-8cd6-9e7a8733ef22	Leite com achocolatado	6e3e0304-3c36-595c-a8ad-6637d646991b	leite
+6753aa6f-0f7e-5208-8cd6-9e7a8733ef22	Leite com achocolatado	3398ad9c-0937-586a-bfd7-0677e61756d1	cacau
+add956e1-36ad-584e-b1e4-a4a8db28315f	Banana	2a191d52-8b5c-5434-8eb8-670052a40943	banana
+1b450f5b-ecde-5880-ad0a-91ce0920069d	Maca	2eb5e6de-8bbd-5ff5-92fd-5ebe1c089ce9	maca
+79ca1872-52e0-59dd-af29-543b793c0860	Macarrao ao sugo	557b626e-baf3-50a5-a552-8c3f025c306e	trigo
+79ca1872-52e0-59dd-af29-543b793c0860	Macarrao ao sugo	61622c8b-bfea-5e9f-a5d5-7350befefe96	tomate
+eed1d0ec-938c-53ef-94b9-626452f5fbd2	Sopa de legumes	2e7a8f47-f741-57b0-b820-94b0887cc9ec	batata
+eed1d0ec-938c-53ef-94b9-626452f5fbd2	Sopa de legumes	cae55f74-b6d7-50fd-b9f9-1b1eabc8539a	cenoura
+eed1d0ec-938c-53ef-94b9-626452f5fbd2	Sopa de legumes	4374c52f-8a06-53e6-9a78-622c07476a5c	chuchu
+9bf7d50c-378c-58f7-ba1a-0dccafffc54c	Bolacha doce	557b626e-baf3-50a5-a552-8c3f025c306e	trigo
+9bf7d50c-378c-58f7-ba1a-0dccafffc54c	Bolacha doce	ca672e67-2cee-54e4-92f4-40693e0a3e3d	acucar
+84f7e794-a400-5d46-9efe-1c8a8f2f711d	Suco de fruta natural	0b200bfc-61f2-5d66-aeab-0d5b3236f83e	fruta
+0db97b08-9e92-541d-b2d2-1bc810f8fbe8	Iogurte	6e3e0304-3c36-595c-a8ad-6637d646991b	leite
+b6f014a3-eaad-57c0-8ee9-24eb9abb819a	Cuscuz	0fc0da14-4704-5c09-9ff1-c2b0ca9b5995	fuba

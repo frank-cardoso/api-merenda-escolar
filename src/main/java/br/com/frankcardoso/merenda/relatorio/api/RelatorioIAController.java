@@ -4,6 +4,11 @@ import br.com.frankcardoso.merenda.relatorio.application.RelatorioIAService;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
+import java.time.LocalDate;
+import java.util.List;
+import br.com.frankcardoso.merenda.fila.domain.Turno;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,5 +38,12 @@ public class RelatorioIAController {
     @GetMapping("/{id}")
     RelatorioIAResponse buscar(@PathVariable UUID id) {
         return service.buscar(id);
+    }
+
+    @GetMapping
+    List<RelatorioResumoResponse> listar(
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+        @RequestParam Turno turno) {
+        return service.listar(data, turno);
     }
 }

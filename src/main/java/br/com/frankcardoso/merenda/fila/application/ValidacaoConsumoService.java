@@ -11,11 +11,13 @@ import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -31,16 +33,20 @@ public class ValidacaoConsumoService {
     private final TurnoResolver turnoResolver;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
+    private final Duration bloqueioRepeticao;
 
     public ValidacaoConsumoService(AlunoRepository alunoRepository, CardapioRepository cardapioRepository,
                                     AuditoriaConsumoRepository auditoriaRepository, TurnoResolver turnoResolver,
-                                    TransactionTemplate transactionTemplate, Clock clock) {
+                                    TransactionTemplate transactionTemplate, Clock clock,
+                                    @Value("${merenda.fila.bloqueio-repeticao:2m}")
+                                    Duration bloqueioRepeticao) {
         this.alunoRepository = alunoRepository;
         this.cardapioRepository = cardapioRepository;
         this.auditoriaRepository = auditoriaRepository;
         this.turnoResolver = turnoResolver;
         this.transactionTemplate = transactionTemplate;
         this.clock = clock;
+        this.bloqueioRepeticao = bloqueioRepeticao;
     }
 
     public ValidarConsumoResponse validar(ValidarConsumoRequest request) {
@@ -54,33 +60,37 @@ public class ValidacaoConsumoService {
         }
 
         LocalDate data = LocalDate.from(horarioLocal);
+        try {
+            return transactionTemplate.execute(status -> validarDentroDaTransacao(request, agora, turno, data));
+        } catch (DataIntegrityViolationException exception) {
+            return ValidarConsumoResponse.bloqueado("CONSUMO_RECENTE_BLOQUEADO", turno);
+        }
+    }
+
+    private ValidarConsumoResponse validarDentroDaTransacao(ValidarConsumoRequest request, Instant agora, Turno turno,
+                                                            LocalDate data) {
         Aluno aluno = alunoRepository.findByCodigoPublicoAndAtivoTrue(request.alunoCodigo()).orElse(null);
         if (aluno == null) return ValidarConsumoResponse.bloqueado("ALUNO_NAO_ENCONTRADO_OU_INATIVO", turno);
 
         Cardapio cardapio = cardapioRepository.findByDataAndTurnoAndAtivoTrue(data, turno).orElse(null);
         if (cardapio == null) return ValidarConsumoResponse.bloqueado("CARDAPIO_NAO_CONFIGURADO", turno);
 
-        String chave = aluno.getId() + ":" + data + ":" + turno;
-        if (auditoriaRepository.existsByChaveConsumoAutorizado(chave)) {
-            registrarBloqueio(aluno, cardapio, data, turno, agora, request, "CONSUMO_JA_REGISTRADO");
-            return bloqueio(aluno, cardapio, turno, "CONSUMO_JA_REGISTRADO");
+        if (auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTurnoAndResultadoAndInstanteGreaterThanEqual(
+            aluno.getId(), data, turno, ResultadoConsumo.AUTORIZADO, agora.minus(bloqueioRepeticao))) {
+            registrarBloqueio(aluno, cardapio, data, turno, agora, request, "CONSUMO_RECENTE_BLOQUEADO");
+            return bloqueio(aluno, cardapio, turno, "CONSUMO_RECENTE_BLOQUEADO");
         }
 
-        try {
-            transactionTemplate.executeWithoutResult(status -> auditoriaRepository.saveAndFlush(
-                novaAuditoria(aluno, cardapio, data, turno, agora, request, ResultadoConsumo.AUTORIZADO, null, chave)));
-            return new ValidarConsumoResponse(ResultadoConsumo.AUTORIZADO, "VERDE", aluno.getId(), aluno.getNome(),
-                turno, cardapio.getNomeRefeicao(), agora, null);
-        } catch (DataIntegrityViolationException exception) {
-            registrarBloqueio(aluno, cardapio, data, turno, agora, request, "CONSUMO_JA_REGISTRADO");
-            return bloqueio(aluno, cardapio, turno, "CONSUMO_JA_REGISTRADO");
-        }
+        auditoriaRepository.saveAndFlush(
+            novaAuditoria(aluno, cardapio, data, turno, agora, request, ResultadoConsumo.AUTORIZADO, null, null));
+        return new ValidarConsumoResponse(ResultadoConsumo.AUTORIZADO, "VERDE", aluno.getId(), aluno.getNome(),
+            turno, cardapio.getNomeRefeicao(), agora, null);
     }
 
     private void registrarBloqueio(Aluno aluno, Cardapio cardapio, LocalDate data, Turno turno, Instant agora,
                                     ValidarConsumoRequest request, String motivo) {
-        transactionTemplate.executeWithoutResult(status -> auditoriaRepository.save(
-            novaAuditoria(aluno, cardapio, data, turno, agora, request, ResultadoConsumo.BLOQUEADO, motivo, null)));
+        auditoriaRepository.save(
+            novaAuditoria(aluno, cardapio, data, turno, agora, request, ResultadoConsumo.BLOQUEADO, motivo, null));
     }
 
     private AuditoriaConsumo novaAuditoria(Aluno aluno, Cardapio cardapio, LocalDate data, Turno turno, Instant agora,

@@ -14,6 +14,13 @@ spring:
   ai:
     model:
       chat: none
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
 
 server:
   port: 8081
@@ -29,9 +36,14 @@ springdoc:
     path: /swagger-ui.html
 
 merenda:
+  gestao:
+    meta-execucao-percentual: 80
+  fila:
+    bloqueio-repeticao: 2m
   ia:
     provedor: fake
     modelo: regras-locais-v1
+    timeout-segundos: 30
   analytics:
     base-url: ${MERENDA_ANALYTICS_BASE_URL:http://localhost:8000}
     timeout: ${MERENDA_ANALYTICS_TIMEOUT:2s}

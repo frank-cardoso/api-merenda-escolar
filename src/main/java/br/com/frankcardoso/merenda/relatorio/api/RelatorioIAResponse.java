@@ -1,6 +1,7 @@
 package br.com.frankcardoso.merenda.relatorio.api;
 
 import br.com.frankcardoso.merenda.fila.domain.Turno;
+import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticos;
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaOutput;
 import br.com.frankcardoso.merenda.relatorio.domain.StatusRelatorioIA;
 import java.time.Instant;
@@ -20,6 +21,7 @@ public record RelatorioIAResponse(
     int tentativas,
     Instant criadoEm,
     Instant iniciadoEm,
-    Instant concluidoEm
+    Instant concluidoEm,
+    IndicadoresLogisticos indicadores
 ) {
 }

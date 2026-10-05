@@ -8,9 +8,30 @@ spring:
         chat:
           options:
             model: ${GEMINI_MODEL:gemini-3.6-flash}
-            temperature: 0.2
+            # Zero para o relatorio ser reproduzivel: com 0.2 o modelo citava as
+            # taxas por item em uma execucao e omitia na seguinte, com o mesmo dado.
+            temperature: 0.0
+            # Teto explicito de saida. Sem ele valia o padrao do provedor, que muda por modelo
+            # e nao foi escolhido por ninguem. Modelos de raciocinio gastam boa parte da cota
+            # pensando antes de escrever (medido no Groq: ~850 de ~1400 tokens), e quando
+            # raciocinio mais JSON passavam do teto a resposta vinha cortada no meio de uma
+            # string — o Jackson estourava com "Unexpected end-of-input".
+            # A maior saida valida observada foi 2.719 caracteres, cerca de 700 tokens.
+            max-output-tokens: 4096
+    retry:
+      max-attempts: 2
+      backoff:
+        initial-interval: 1s
+        multiplier: 2
+        max-interval: 5s
 
 merenda:
   ia:
     provedor: gemini
     modelo: ${GEMINI_MODEL:gemini-3.6-flash}
+    http-timeout-segundos: 10
+    timeout-segundos: 50
+    fallback:
+      base-url: https://api.groq.com/openai
+      modelo: ${GROQ_MODEL:openai/gpt-oss-20b}
+      http-timeout-segundos: 10

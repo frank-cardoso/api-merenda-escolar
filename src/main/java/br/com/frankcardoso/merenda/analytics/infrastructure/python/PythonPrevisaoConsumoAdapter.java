@@ -54,6 +54,9 @@ public class PythonPrevisaoConsumoAdapter implements PrevisaoConsumoPort {
         return requestFactory;
     }
 
+    private record DiaHistorico(String dataReferencia, long consumosAutorizados) {
+    }
+
     private record PythonPrevisaoConsumoRequest(
         String dataReferencia,
         String turno,
@@ -62,8 +65,8 @@ public class PythonPrevisaoConsumoAdapter implements PrevisaoConsumoPort {
         long consumosAutorizados,
         long tentativasBloqueadas,
         BigDecimal taxaConsumoPlanejado,
-        long sobraEstimada,
-        List<Object> historico
+        long sobraDePlanejamento,
+        List<DiaHistorico> historico
     ) {
 
         private static PythonPrevisaoConsumoRequest from(PrevisaoConsumoInput input) {
@@ -75,8 +78,11 @@ public class PythonPrevisaoConsumoAdapter implements PrevisaoConsumoPort {
                 input.consumosAutorizados(),
                 input.tentativasBloqueadas(),
                 input.taxaConsumoPlanejado(),
-                input.sobraEstimada(),
-                List.of()
+                input.sobraDePlanejamento(),
+                input.historico().stream()
+                    .map(dia -> new DiaHistorico(
+                        dia.dataReferencia().toString(), dia.consumosAutorizados()))
+                    .toList()
             );
         }
     }
