@@ -10,7 +10,8 @@ public record CriarRelatorioIARequest(
     @NotNull LocalDate dataReferencia,
     @NotNull Turno turno,
     List<UUID> receitaIds,
-    List<LocalDate> datasSelecionadas
+    List<LocalDate> datasSelecionadas,
+    UUID turmaId
 ) {
     public CriarRelatorioIARequest {
         receitaIds = receitaIds == null ? List.of() : List.copyOf(receitaIds);

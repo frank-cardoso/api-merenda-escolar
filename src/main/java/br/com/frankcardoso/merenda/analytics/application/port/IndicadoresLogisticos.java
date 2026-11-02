@@ -26,7 +26,7 @@ public record IndicadoresLogisticos(
         int escolas, List<String> origens, String metrica, BigDecimal percentual) {}
     public record AceitacaoItem(UUID receitaId, String item, long porcoesPreparadas, long porcoesServidas,
         long porcoesConsumidas, long restoNoPrato, BigDecimal percentual, long fechamentos) {}
-    public record TurmaIndicadores(String turma, long consumosRegistrados, long alunosUnicos,
+    public record TurmaIndicadores(UUID turmaId, String turma, long consumosRegistrados, long alunosUnicos,
         long repeticoes, BigDecimal percentual, String statusMeta, String motivo) {}
     public record AnaliseIndisponivel(String status, String motivo, Integer cicloSugeridoDias) {}
 
@@ -45,7 +45,7 @@ public record IndicadoresLogisticos(
         List<IngredienteResto> acimaDaBase, String motivo) {}
 
     public static IndicadoresLogisticos indisponivel(LocalDate data, Turno turno) {
-        return new IndicadoresLogisticos("3", "indicadores-v1", "INDISPONIVEL", data,
+        return new IndicadoresLogisticos("4", "indicadores-v1", "INDISPONIVEL", data,
             data.minusDays(29), turno, null, null, List.of(), List.of(), List.of(), 0, 0, List.of(), List.of(), null, null, null, null,
             List.of("Serviço de indicadores indisponível. Nenhum percentual foi estimado pela IA."));
     }

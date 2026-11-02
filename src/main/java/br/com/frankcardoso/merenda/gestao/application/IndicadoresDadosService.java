@@ -68,7 +68,7 @@ public class IndicadoresDadosService {
         List<UUID> receitasSelecionadas, List<LocalDate> datasSelecionadas) {
         var consumo = consolidacao.consolidar(data, turno);
         var turmas = auditoria.atendimentosPorTurma(data, turno).stream()
-            .map(t -> new ContagemTurma(t.getTurma(), t.getConsumos(), t.getAlunos())).toList();
+            .map(t -> new ContagemTurma(t.getTurmaId(), t.getTurma(), t.getConsumos(), t.getAlunos())).toList();
         var inicio = data.minusDays(29);
         var itens = historico.execucoesNaJanela(inicio, data, turno).stream()
             .collect(Collectors.groupingBy(HistoricoConsumoRepository.ExecucaoItem::getItem,

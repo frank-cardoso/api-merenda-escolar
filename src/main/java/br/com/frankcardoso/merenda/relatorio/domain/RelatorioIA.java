@@ -32,6 +32,9 @@ public class RelatorioIA {
     @Column(name = "datas_selecionadas_json", columnDefinition = "CHARACTER LARGE OBJECT")
     private String datasSelecionadasJson;
 
+    @Column(name = "turma_id")
+    private UUID turmaId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private StatusRelatorioIA status;
@@ -80,7 +83,7 @@ public class RelatorioIA {
     }
 
     public static RelatorioIA pendente(LocalDate data, Turno turno, Instant agora,
-        java.util.List<UUID> receitaIds, java.util.List<LocalDate> datasSelecionadas) {
+        java.util.List<UUID> receitaIds, java.util.List<LocalDate> datasSelecionadas, UUID turmaId) {
         var relatorio = new RelatorioIA();
         relatorio.id = UUID.randomUUID();
         relatorio.dataReferencia = data;
@@ -88,6 +91,7 @@ public class RelatorioIA {
         relatorio.receitaIdsJson = receitaIds.stream().map(UUID::toString).reduce((a, b) -> a + "," + b).orElse("");
         relatorio.datasSelecionadasJson = datasSelecionadas.stream().map(LocalDate::toString)
             .reduce((a, b) -> a + "," + b).orElse("");
+        relatorio.turmaId = turmaId;
         relatorio.status = StatusRelatorioIA.PENDENTE;
         relatorio.promptVersao = "v2-indicadores";
         relatorio.tentativas = 0;
@@ -95,13 +99,18 @@ public class RelatorioIA {
         return relatorio;
     }
 
+    public static RelatorioIA pendente(LocalDate data, Turno turno, Instant agora,
+        java.util.List<UUID> receitaIds, java.util.List<LocalDate> datasSelecionadas) {
+        return pendente(data, turno, agora, receitaIds, datasSelecionadas, null);
+    }
+
     public static RelatorioIA pendente(LocalDate data, Turno turno, Instant agora) {
-        return pendente(data, turno, agora, java.util.List.of(), java.util.List.of());
+        return pendente(data, turno, agora, java.util.List.of(), java.util.List.of(), null);
     }
 
     public static RelatorioIA pendente(LocalDate data, Turno turno, Instant agora,
         java.util.List<UUID> receitaIds) {
-        return pendente(data, turno, agora, receitaIds, java.util.List.of());
+        return pendente(data, turno, agora, receitaIds, java.util.List.of(), null);
     }
 
     public void iniciar(String provedor, String modelo, String dadosEntradaJson, Instant agora) {
@@ -142,6 +151,7 @@ public class RelatorioIA {
     }
 
     public String getIndicadoresJson() { return indicadoresJson; }
+    public String getDadosEntradaJson() { return dadosEntradaJson; }
 
     private void exigirProcessando() {
         if (status != StatusRelatorioIA.PROCESSANDO) {
@@ -154,6 +164,7 @@ public class RelatorioIA {
     public Turno getTurno() { return turno; }
     public String getReceitaIdsJson() { return receitaIdsJson; }
     public String getDatasSelecionadasJson() { return datasSelecionadasJson; }
+    public UUID getTurmaId() { return turmaId; }
     public StatusRelatorioIA getStatus() { return status; }
     public String getProvedor() { return provedor; }
     public String getModelo() { return modelo; }

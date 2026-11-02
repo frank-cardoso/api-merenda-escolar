@@ -116,7 +116,7 @@ public class RelatorioIAWorker {
             }
             consolidacao = alinharConsolidacaoAFotografia(consolidacao, indicadores);
             AnaliseLogisticaInput input = criarInput(consolidacao, preverConsumo(consolidacao), indicadores,
-                selecionadas);
+                selecionadas, relatorio.getTurmaId());
 
             relatorio.registrarIndicadores(escreverJson(indicadores));
 
@@ -180,7 +180,8 @@ public class RelatorioIAWorker {
         ConsolidacaoConsumoResponse consolidacao,
         ResultadoPrevisao resultadoPrevisao,
         IndicadoresLogisticos indicadores,
-        List<UUID> receitasSelecionadas
+        List<UUID> receitasSelecionadas,
+        UUID turmaId
     ) {
         var ranking = historicoService.rankingDosPioresItens(consolidacao.data(), consolidacao.turno());
         var escopoSelecionado = !receitasSelecionadas.isEmpty();
@@ -213,7 +214,7 @@ public class RelatorioIAWorker {
             resultadoPrevisao.aviso(),
             ranking,
             itensComTendencia(consolidacao, itensComTaxa),
-            IndicadoresParaLLM.de(indicadores),
+            IndicadoresParaLLM.de(indicadores, turmaId),
             ConclusaoDeterministica.de(indicadores, resultadoPrevisao.previsao())
         );
     }

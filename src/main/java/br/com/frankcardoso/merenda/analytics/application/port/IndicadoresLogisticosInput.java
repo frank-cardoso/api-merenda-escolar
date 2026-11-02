@@ -44,7 +44,7 @@ public record IndicadoresLogisticosInput(
             quantidadeFechamentosDaSemana, datasFechamentosDoMes, List.of(), List.of(), false);
     }
 
-    public record ContagemTurma(String turma, long consumosRegistrados, long alunosUnicos) {}
+    public record ContagemTurma(UUID turmaId, String turma, long consumosRegistrados, long alunosUnicos) {}
     public record ContagemItem(String item, long planejamentos, long execucoesRegistradas,
                                int escolas, List<String> origens) {}
     /** {@code itensMedidos} conta so itens do cardapio: e o numerador da cobertura. */

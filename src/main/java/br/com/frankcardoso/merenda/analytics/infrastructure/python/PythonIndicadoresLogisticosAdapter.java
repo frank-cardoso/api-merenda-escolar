@@ -36,7 +36,7 @@ public class PythonIndicadoresLogisticosAdapter implements IndicadoresLogisticos
     public IndicadoresLogisticos calcular(IndicadoresLogisticosInput input) {
         var result = client.post().uri("/api/v1/indicadores-logisticos").body(input)
             .retrieve().body(IndicadoresLogisticos.class);
-        if (result == null || !"3".equals(result.schemaVersion())
+        if (result == null || !"4".equals(result.schemaVersion())
             || !"DISPONIVEL".equals(result.status()) || result.execucaoPlanejamento() == null
             || result.atendimentos() == null || result.topComidas() == null
             || result.aceitacaoItens() == null || result.aceitacaoItensSemana() == null

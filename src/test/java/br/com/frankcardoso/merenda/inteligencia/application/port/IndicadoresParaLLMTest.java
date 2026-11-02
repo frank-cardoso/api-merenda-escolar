@@ -21,7 +21,7 @@ class IndicadoresParaLLMTest {
     }
 
     private TurmaIndicadores turma(String nome, long consumos, String statusMeta, BigDecimal pct) {
-        return new TurmaIndicadores(nome, consumos, consumos, 0, pct, statusMeta, MOTIVO);
+        return new TurmaIndicadores(null, nome, consumos, consumos, 0, pct, statusMeta, MOTIVO);
     }
 
     @Test

@@ -22,6 +22,8 @@ public record RelatorioIAResponse(
     Instant criadoEm,
     Instant iniciadoEm,
     Instant concluidoEm,
-    IndicadoresLogisticos indicadores
+    IndicadoresLogisticos indicadores,
+    UUID turmaId,
+    String escopoCardapio
 ) {
 }

@@ -43,7 +43,7 @@ public class RelatorioIAService {
         validarAmostra(request);
         RelatorioIA relatorio = repository.saveAndFlush(
             RelatorioIA.pendente(request.dataReferencia(), request.turno(), Instant.now(clock),
-                request.receitaIds(), request.datasSelecionadas()));
+                request.receitaIds(), request.datasSelecionadas(), request.turmaId()));
         worker.processar(relatorio.getId());
         return new CriarRelatorioIAResponse(
             relatorio.getId(),
@@ -98,8 +98,24 @@ public class RelatorioIAService {
             relatorio.getCriadoEm(),
             relatorio.getIniciadoEm(),
             relatorio.getConcluidoEm(),
-            lerIndicadores(relatorio.getIndicadoresJson())
+            lerIndicadores(relatorio.getIndicadoresJson()),
+            relatorio.getTurmaId(),
+            lerEscopoCardapio(relatorio.getDadosEntradaJson())
         );
+    }
+
+    /**
+     * O nome do cardápio analisado só existe no payload que foi para a IA
+     * ({@code dadosEntradaJson}), nunca foi exposto na resposta. Sem isso a tela não tem como
+     * dizer quais itens o relatório cobriu, e duas análises com escopos diferentes parecem iguais.
+     */
+    private String lerEscopoCardapio(String dadosEntradaJson) {
+        if (dadosEntradaJson == null) return null;
+        try {
+            return objectMapper.readTree(dadosEntradaJson).path("cardapio").asText(null);
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
     }
 
     private AnaliseLogisticaOutput lerResultado(String json) {
