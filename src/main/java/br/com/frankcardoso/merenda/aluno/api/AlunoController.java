@@ -62,4 +62,9 @@ public class AlunoController {
         enturmacaoService.transferir(id, request.turmaId(), request.dataMudanca());
         return AlunoResponse.de(service.detalhar(id));
     }
+
+    @PostMapping("/{id}/rosto")
+    AlunoResponse cadastrarRosto(@PathVariable UUID id, @Valid @RequestBody CadastrarRostoRequest request) {
+        return AlunoResponse.de(service.cadastrarRosto(id, request.fotoBase64()));
+    }
 }

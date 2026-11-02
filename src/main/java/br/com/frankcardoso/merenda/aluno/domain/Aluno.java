@@ -29,6 +29,9 @@ public class Aluno {
     @Column(name = "codigo_origem", length = 40)
     private String codigoOrigem;
 
+    @Column(name = "rosto_embedding_json", columnDefinition = "CHARACTER LARGE OBJECT")
+    private String rostoEmbeddingJson;
+
     @Column(name = "criado_em", nullable = false)
     private Instant criadoEm;
 
@@ -52,11 +55,19 @@ public class Aluno {
         this.ativo = ativo;
     }
 
+    /** O embedding chega pronto (gerado pelo servico de reconhecimento); o aluno so guarda. */
+    public void cadastrarRosto(String rostoEmbeddingJson) {
+        this.rostoEmbeddingJson = rostoEmbeddingJson;
+    }
+
+    public boolean temRostoCadastrado() { return rostoEmbeddingJson != null; }
+
     public UUID getId() { return id; }
     public String getCodigoPublico() { return codigoPublico; }
     public String getMatricula() { return matricula; }
     public String getNome() { return nome; }
     public boolean isAtivo() { return ativo; }
     public String getCodigoOrigem() { return codigoOrigem; }
+    public String getRostoEmbeddingJson() { return rostoEmbeddingJson; }
     public Instant getCriadoEm() { return criadoEm; }
 }

@@ -1,5 +1,7 @@
 package br.com.frankcardoso.merenda.shared.web;
 
+import br.com.frankcardoso.merenda.biometria.domain.MultiplosRostosDetectadosException;
+import br.com.frankcardoso.merenda.biometria.domain.RostoNaoDetectadoException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioDataPassadaException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioDuplicadoException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioNaoEncontradoPorIdException;
@@ -38,7 +40,8 @@ public class RestExceptionHandler {
     }
 
     @ExceptionHandler({CardapioDataPassadaException.class, MedicaoSobraInconsistenteException.class,
-        ReceitaDesconhecidaException.class, DadosInvalidosException.class})
+        ReceitaDesconhecidaException.class, DadosInvalidosException.class,
+        RostoNaoDetectadoException.class, MultiplosRostosDetectadosException.class})
     ProblemDetail tratarEntradaInvalida(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.BAD_REQUEST, "Requisicao invalida", exception.getMessage(), request);
     }

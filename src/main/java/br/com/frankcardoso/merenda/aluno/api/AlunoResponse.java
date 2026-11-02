@@ -14,6 +14,7 @@ public record AlunoResponse(
     String nome,
     boolean ativo,
     String codigoOrigem,
+    boolean temRostoCadastrado,
     VinculoResponse turmaVigente,
     List<VinculoResponse> historicoVinculos
 ) {
@@ -31,6 +32,7 @@ public record AlunoResponse(
     static AlunoResponse de(AlunoDetalhe detalhe) {
         Aluno a = detalhe.aluno();
         return new AlunoResponse(a.getId(), a.getCodigoPublico(), a.getMatricula(), a.getNome(), a.isAtivo(), a.getCodigoOrigem(),
+            a.temRostoCadastrado(),
             detalhe.vigente().map(VinculoResponse::de).orElse(null),
             detalhe.historico().stream().map(VinculoResponse::de).toList());
     }
@@ -38,6 +40,6 @@ public record AlunoResponse(
     /** Listagem: so a turma vigente, sem o historico. */
     static AlunoResponse resumo(Aluno a) {
         return new AlunoResponse(a.getId(), a.getCodigoPublico(), a.getMatricula(), a.getNome(), a.isAtivo(), a.getCodigoOrigem(),
-            null, null);
+            a.temRostoCadastrado(), null, null);
     }
 }

@@ -8,7 +8,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
+import br.com.frankcardoso.merenda.biometria.application.port.ReconhecimentoFacialPort;
+import br.com.frankcardoso.merenda.biometria.domain.RostoNaoDetectadoException;
 import com.jayway.jsonpath.JsonPath;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +22,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Sem @Transactional de proposito: com open-in-view desligado, reproduz o acesso lazy fora da transacao. */
@@ -29,6 +36,9 @@ class CadastroHttpTest {
 
     @Autowired
     private MockMvc mvc;
+
+    @MockitoBean
+    private ReconhecimentoFacialPort reconhecimentoFacial;
 
     private String criar(String url, String json) throws Exception {
         var corpo = mvc.perform(post(url).contentType(MediaType.APPLICATION_JSON).content(json))
@@ -69,6 +79,36 @@ class CadastroHttpTest {
 
         mvc.perform(post("/api/v1/alunos/" + aluno + "/transferencias").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"turmaId\":\"" + a + "\",\"dataMudanca\":\"2020-06-01\"}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void cadastrarRostoGuardaSoOEmbeddingENaoAFoto() throws Exception {
+        var sufixo = UUID.randomUUID().toString().substring(0, 8);
+        var t = turma("R" + sufixo);
+        var aluno = aluno(sufixo, t, "2020-01-01");
+        when(reconhecimentoFacial.gerarEmbedding("foto-base64-fake")).thenReturn(List.of(0.1f, 0.2f, 0.3f));
+
+        mvc.perform(post("/api/v1/alunos/" + aluno + "/rosto").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fotoBase64\":\"foto-base64-fake\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.temRostoCadastrado").value(true));
+
+        mvc.perform(get("/api/v1/alunos/" + aluno))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.temRostoCadastrado").value(true));
+    }
+
+    @Test
+    void cadastrarRostoSemRostoDetectavelDevolve400() throws Exception {
+        var sufixo = UUID.randomUUID().toString().substring(0, 8);
+        var t = turma("S" + sufixo);
+        var aluno = aluno(sufixo, t, "2020-01-01");
+        when(reconhecimentoFacial.gerarEmbedding(any()))
+            .thenThrow(new RostoNaoDetectadoException("Face could not be detected."));
+
+        mvc.perform(post("/api/v1/alunos/" + aluno + "/rosto").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fotoBase64\":\"foto-ruim\"}"))
             .andExpect(status().isBadRequest());
     }
 
