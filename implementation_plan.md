@@ -23,9 +23,11 @@ O porque de cada uma dessas decisoes esta em `DECISOES-TECNICAS.md`.
 
 Persistidos hoje:
 
-- `Aluno`: UUID, codigo publico do QR, matricula, nome, turma e situacao.
+- `Aluno`: UUID, codigo publico do QR, matricula, nome e situacao. Nao tem mais campo de turma.
+- `Turma`: entidade propria (codigo, descricao, turno, capacidade).
+- `Enturmacao`: vinculo aluno-turma com `dataInicio` e `dataFim` (nula = vigente). Vinculos do mesmo aluno nao se sobrepoem (409).
 - `Cardapio`: data, turno, itens e quantidade planejada. Soft delete preserva a auditoria.
-- `AuditoriaConsumo`: aluno, cardapio, turno, metodo, resultado, motivo e correlation ID.
+- `AuditoriaConsumo`: aluno, cardapio, turno, metodo, resultado, motivo, correlation ID e a turma carimbada (`turmaId`/`turmaNome`) no momento do consumo. Aluno sem enturmacao vigente recebe "Sem turma".
 - `RelatorioIA`: periodo, status persistido, entrada agregada, resultado, modelo, erro e a fotografia de indicadores do momento da geracao.
 - `Receita`: item que pode ir ao cardapio, com id proprio. `codigo_externo` reservado para o `RECEITAS.ID` do legado.
 - `Ingrediente`: id proprio, equivalente a `INGREDIENTES.ID` do legado.
@@ -52,10 +54,12 @@ Implementados:
 - `POST /api/v1/relatorios-ia`: cria job e retorna o id.
 - `GET /api/v1/relatorios-ia/{id}`: consulta status e resultado.
 - `GET /api/v1/relatorios-ia?data=&turno=`: relatorios salvos do dia e turno.
+- `GET|POST|PUT /api/v1/alunos` e `GET /api/v1/alunos/{id}` (com `turmaVigente` e `historicoVinculos`).
+- `GET|POST|PUT|DELETE /api/v1/turmas`.
+- `POST /api/v1/alunos/{id}/transferencias` com `{turmaId, dataMudanca}`: fecha o vinculo vigente e abre o novo.
 
 Previstos no desenho, ainda nao implementados:
 
-- `GET|POST|PUT /api/v1/alunos`: cadastro e consulta.
 - `GET /api/v1/consumos`: consulta da auditoria.
 - `POST /api/v1/relatorios-ia/{id}/reprocessamentos`: reprocessa falhas.
 
@@ -92,6 +96,7 @@ resolvida (QR) ou e problema de hardware.
 7. Medicao de sobra e composicao das receitas, para aceitacao e desperdicio deixarem de ser NAO_AVALIAVEL. **Implementado:** tabela, endpoint de lancamento, faker e analise por ingrediente.
 8. Identidade de item por id e grafo de ingredientes no payload do servico Python. **Implementado:** catalogo de receitas e ingredientes, FK nas tres tabelas de serie, fim do casamento por nome.
 9. Testes de concorrencia, privacidade, acessibilidade e documentacao final.
+10. Turma como entidade e enturmacao com vigencia. **Implementado:** migration V10, carimbo de turma na auditoria (autorizado e bloqueado), balde "Sem turma", contrato Java-Python em `schemaVersion=4` com `turmaId` em `porTurma` (relatorios "2" e "3" continuam abrindo), rotas de alunos, turmas e transferencia, feature `cadastro` no front. **Pendente:** adesao por turma segue `NAO_AVALIAVEL`, pois depende de presenca elegivel, e a V10 nao preenche o carimbo das linhas de auditoria anteriores a ela.
 
 ## Criterios de aceite
 
@@ -106,3 +111,5 @@ resolvida (QR) ou e problema de hardware.
 - O detalhe por turma que a tela le continua completo em `indicadores_json` mesmo quando o payload do prompt manda so o resumo.
 - Nenhum vinculo entre tabelas depende de nome: item fora do catalogo e recusado no cadastro com HTTP 400, em vez de gravado e casado por aproximacao depois.
 - O servico Python nao le tabela de dominio alguma: tudo o que ele precisa chega no pedido.
+- Consumo e agrupado pela turma vigente na data em que ocorreu (carimbo), nao pela turma atual do aluno; transferir um aluno nao altera o historico.
+- Adesao por turma continua `NAO_AVALIAVEL`: turma modelada nao substitui presenca elegivel.

@@ -13,20 +13,25 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface AuditoriaConsumoRepository extends JpaRepository<AuditoriaConsumo, UUID> {
+    // COALESCE: linhas anteriores a V10 (turma_nome nulo) caem no balde "Sem turma", somando com as ja carimbadas.
     @Query("""
-        SELECT a.aluno.turma AS turma, COUNT(a) AS consumos, COUNT(DISTINCT a.aluno.id) AS alunos
+        SELECT a.turmaId AS turmaId, COALESCE(a.turmaNome, br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo.SEM_TURMA) AS turma, COUNT(a) AS consumos, COUNT(DISTINCT a.aluno.id) AS alunos
         FROM AuditoriaConsumo a
         WHERE a.dataOperacional = :data AND a.turno = :turno
           AND a.resultado = br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo.AUTORIZADO
-        GROUP BY a.aluno.turma ORDER BY a.aluno.turma
+        GROUP BY a.turmaId, COALESCE(a.turmaNome, br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo.SEM_TURMA)
+        ORDER BY COALESCE(a.turmaNome, br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo.SEM_TURMA)
         """)
     List<AtendimentoTurma> atendimentosPorTurma(@Param("data") LocalDate data, @Param("turno") Turno turno);
 
     interface AtendimentoTurma {
+        UUID getTurmaId();
         String getTurma();
         long getConsumos();
         long getAlunos();
     }
+
+    boolean existsByTurmaId(UUID turmaId);
 
     boolean existsByAlunoIdAndDataOperacionalAndTurnoAndResultadoAndInstanteGreaterThanEqual(
         UUID alunoId,

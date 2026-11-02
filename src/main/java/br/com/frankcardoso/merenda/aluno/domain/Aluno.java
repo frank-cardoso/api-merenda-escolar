@@ -23,11 +23,11 @@ public class Aluno {
     @Column(nullable = false, length = 150)
     private String nome;
 
-    @Column(nullable = false, length = 80)
-    private String turma;
-
     @Column(nullable = false)
     private boolean ativo;
+
+    @Column(name = "codigo_origem", length = 40)
+    private String codigoOrigem;
 
     @Column(name = "criado_em", nullable = false)
     private Instant criadoEm;
@@ -35,21 +35,28 @@ public class Aluno {
     protected Aluno() {
     }
 
-    public Aluno(UUID id, String codigoPublico, String matricula, String nome, String turma, boolean ativo, Instant criadoEm) {
+    public Aluno(UUID id, String codigoPublico, String matricula, String nome, boolean ativo,
+                 String codigoOrigem, Instant criadoEm) {
         this.id = id;
         this.codigoPublico = codigoPublico;
         this.matricula = matricula;
         this.nome = nome;
-        this.turma = turma;
         this.ativo = ativo;
+        this.codigoOrigem = codigoOrigem;
         this.criadoEm = criadoEm;
+    }
+
+    public void atualizar(String matricula, String nome, boolean ativo) {
+        this.matricula = matricula;
+        this.nome = nome;
+        this.ativo = ativo;
     }
 
     public UUID getId() { return id; }
     public String getCodigoPublico() { return codigoPublico; }
     public String getMatricula() { return matricula; }
     public String getNome() { return nome; }
-    public String getTurma() { return turma; }
     public boolean isAtivo() { return ativo; }
+    public String getCodigoOrigem() { return codigoOrigem; }
     public Instant getCriadoEm() { return criadoEm; }
 }

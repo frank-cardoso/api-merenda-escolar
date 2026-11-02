@@ -153,7 +153,7 @@ Os estados persistidos sao `PENDENTE`, `PROCESSANDO`, `CONCLUIDO` e `FALHOU`. O 
 
 Consulte [implementation_plan.md](implementation_plan.md) para o roteiro completo.
 
-## Dashboard logístico — indicadores v2
+## Dashboard logístico — indicadores v2 (contrato `schemaVersion=4`)
 
 Atualize e reinicie também o serviço Python antes de testar esta versão. O cálculo novo usa
 `POST /api/v1/indicadores-logisticos` no Python; não chama o Gemini e não exige chave de IA.
@@ -161,6 +161,9 @@ Atualize e reinicie também o serviço Python antes de testar esta versão. O c�
 - `GET /api/v1/gestao/indicadores?data=2026-09-17&turno=MANHA`: indicadores do dia e ranking histórico dos últimos 30 dias (inclusive a data de referência).
 - `GET /api/v1/relatorios-ia?data=2026-09-17&turno=MANHA`: últimos 20 relatórios do filtro, mais recentes primeiro.
 - `GET /api/v1/relatorios-ia/{id}`: inclui `indicadores`, a fotografia persistida usada no relatório; consultas não recalculam nem chamam IA.
+
+O contrato Java↔Python está em `schemaVersion = "4"`: cada item de `porTurma` traz `turmaId`.
+Relatórios persistidos nas versões "2" e "3" continuam abrindo.
 
 A migration V5 adiciona `relatorio_ia.indicadores_json`. Relatórios anteriores continuam
 consultáveis e retornam `indicadores: null`. Relatórios novos usam `promptVersao=v2-indicadores`.
@@ -178,15 +181,43 @@ nula é ausência de registro. O ranking informa escolas e origens e não deve s
 com a demanda da fila local. Dados `FAKE`/sintéticos continuam identificados pelas origens.
 Para outras escolas, o próximo passo é modelar escola na fila e filtrar ambos os conjuntos.
 
-Turmas exibem alunos/consumos/repetições pela turma **atual** do cadastro, apenas para turmas
-com atendimentos. Percentuais de adesão e metas por turma permanecem não avaliáveis até haver
-presença elegível e histórico de vínculo. Ingredientes e rotação retornam `DADOS_INSUFICIENTES`:
+Turmas exibem alunos/consumos/repetições pela turma **carimbada no consumo** (ver "Turmas e
+enturmação"), apenas para turmas com atendimentos. Percentuais de adesão e metas por turma
+permanecem `NAO_AVALIAVEL`: ter turma modelada não autoriza calcular adesão, que depende de
+presença elegível. Ingredientes e rotação retornam `DADOS_INSUFICIENTES`:
 faltam composição de receitas e séries comparáveis; nenhum ciclo de 15/30 dias é inventado.
 
 Se o Python falhar, o endpoint retorna `status=INDISPONIVEL`, indicadores nulos e aviso seguro.
 O relatório continua com as informações disponíveis. A fila não depende dessa integração.
 Respostas de IA são validadas estruturalmente (campos e classificações); isso não garante
 veracidade da narrativa. Números do dashboard nunca vêm da resposta do LLM.
+
+## Turmas e enturmação
+
+- `Turma` é entidade própria (código, descrição, turno, capacidade). `Aluno` não tem mais o
+  campo `turma`; o vínculo é `Enturmacao`, com `dataInicio` e `dataFim` (nula = vigente).
+- A migration **V10** cria `turma` e `enturmacao`, remove `aluno.turma` e adiciona
+  `turma_id`/`turma_nome` em `auditoria_consumo`. **A V10 não preenche o carimbo das linhas de
+  auditoria que já existiam**: ver "Limitações conhecidas".
+- Enturmações do mesmo aluno não podem se sobrepor; a tentativa é rejeitada com 409. `vigenteEm`
+  é tolerante: se chegar dado sobreposto de fora, escolhe a vigência mais recente em vez de
+  derrubar a fila.
+- A fila **carimba** `turmaId`/`turmaNome` em cada `AuditoriaConsumo`, tanto no caminho
+  autorizado quanto no bloqueado. O dashboard agrupa por esse carimbo, não pela turma atual do
+  aluno: transferir um aluno não reescreve o passado.
+- Consumo de aluno sem enturmação vigente na data cai no balde **"Sem turma"**, que entra
+  normalmente na soma de Atendimentos.
+- O `DadosDemonstracaoLoader` semeia 9 turmas (1A a 9A) e enturma os alunos de demonstração antes
+  de gerar o consumo.
+
+Rotas:
+
+- `GET|POST|PUT /api/v1/alunos` e `GET /api/v1/alunos/{id}`; o detalhe traz `turmaVigente` e
+  `historicoVinculos`. A listagem não preenche esses dois campos.
+- `GET|POST|PUT|DELETE /api/v1/turmas`.
+- `POST /api/v1/alunos/{id}/transferencias` com `{"turmaId": "...", "dataMudanca": "2026-10-19"}`:
+  fecha o vínculo vigente no dia anterior e abre o novo. `dataMudanca` precisa ser posterior ao
+  início do vínculo vigente (senão, HTTP 400).
 
 ## Estado atual — análise por cardápio
 
@@ -204,8 +235,20 @@ ingestão, aceitação ou desperdício.
 
 ## Pendências e próximos passos
 
-- Registrar presença elegível para permitir adesão e metas confiáveis por turma.
+- Registrar presença elegível para permitir adesão e metas confiáveis por turma. **Segue aberta**:
+  a turma já é modelada e carimbada, mas adesão por turma continua `NAO_AVALIAVEL`.
 - Avaliar a necessidade de filtro específico por turma no dashboard e nos relatórios.
+- Backfill de `turma_id`/`turma_nome` nas linhas de `auditoria_consumo` anteriores à V10 (ver
+  "Limitações conhecidas").
 - Separar, em uma futura integração, dados reais de dados sintéticos e de demonstração.
 - Definir a política de invalidação ou reprocessamento de relatórios quando um fechamento for editado.
 - Revisar os indicadores e os textos quando houver volume suficiente de dados reais.
+
+## Limitações conhecidas
+
+- Em banco que já tinha consumo antes da V10, as linhas antigas de `auditoria_consumo` ficam com
+  `turma_nome` nulo. O agrupamento por turma repassa esse nulo ao Python, que exige texto em
+  `turma`, e o indicador do dia responde `INDISPONIVEL`. Foi observado ao subir a V10 sobre um
+  banco existente; em banco novo (semeado pelo loader) não ocorre. Ainda sem correção.
+- O H2 usa `AUTO_SERVER=TRUE`: uma segunda instância apontando para `./data/merenda` se conecta
+  ao banco da primeira, em vez de abrir outro.

@@ -27,13 +27,18 @@ public class RestExceptionHandler {
         return problema(HttpStatus.NOT_FOUND, "Recurso nao encontrado", exception.getMessage(), request);
     }
 
-    @ExceptionHandler(CardapioDuplicadoException.class)
-    ProblemDetail tratarConflito(CardapioDuplicadoException exception, HttpServletRequest request) {
+    @ExceptionHandler(RecursoNaoEncontradoException.class)
+    ProblemDetail tratarCadastroNaoEncontrado(RecursoNaoEncontradoException exception, HttpServletRequest request) {
+        return problema(HttpStatus.NOT_FOUND, "Recurso nao encontrado", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler({CardapioDuplicadoException.class, ConflitoCadastroException.class})
+    ProblemDetail tratarConflito(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.CONFLICT, "Conflito", exception.getMessage(), request);
     }
 
     @ExceptionHandler({CardapioDataPassadaException.class, MedicaoSobraInconsistenteException.class,
-        ReceitaDesconhecidaException.class})
+        ReceitaDesconhecidaException.class, DadosInvalidosException.class})
     ProblemDetail tratarEntradaInvalida(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.BAD_REQUEST, "Requisicao invalida", exception.getMessage(), request);
     }

@@ -19,6 +19,8 @@ import java.util.UUID;
 @Table(name = "auditoria_consumo")
 public class AuditoriaConsumo {
 
+    public static final String SEM_TURMA = "Sem turma";
+
     @Id
     private UUID id;
 
@@ -57,13 +59,19 @@ public class AuditoriaConsumo {
     @Column(name = "chave_consumo_autorizado", unique = true, length = 150)
     private String chaveConsumoAutorizado;
 
+    @Column(name = "turma_id")
+    private UUID turmaId;
+
+    @Column(name = "turma_nome", length = 80)
+    private String turmaNome;
+
     protected AuditoriaConsumo() {
     }
 
     public AuditoriaConsumo(UUID id, Aluno aluno, Cardapio cardapio, LocalDate dataOperacional,
                             Turno turno, Instant instante, MetodoIdentificacao metodoIdentificacao,
                             ResultadoConsumo resultado, String motivo, UUID correlationId,
-                            String chaveConsumoAutorizado) {
+                            String chaveConsumoAutorizado, UUID turmaId, String turmaNome) {
         this.id = id;
         this.aluno = aluno;
         this.cardapio = cardapio;
@@ -75,5 +83,19 @@ public class AuditoriaConsumo {
         this.motivo = motivo;
         this.correlationId = correlationId;
         this.chaveConsumoAutorizado = chaveConsumoAutorizado;
+        this.turmaId = turmaId;
+        this.turmaNome = turmaNome;
+    }
+
+    public Instant getInstante() {
+        return instante;
+    }
+
+    public UUID getTurmaId() {
+        return turmaId;
+    }
+
+    public String getTurmaNome() {
+        return turmaNome;
     }
 }

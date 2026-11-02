@@ -10,6 +10,8 @@ import br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo;
 import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
+import br.com.frankcardoso.merenda.turma.infrastructure.EnturmacaoRepository;
+import br.com.frankcardoso.merenda.shared.config.ApplicationConfig;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,24 +27,27 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class ValidacaoConsumoService {
 
-    private static final ZoneId ZONA_OPERACIONAL = ZoneId.of("America/Sao_Paulo");
+    private static final ZoneId ZONA_OPERACIONAL = ApplicationConfig.ZONA_OPERACIONAL;
 
     private final AlunoRepository alunoRepository;
     private final CardapioRepository cardapioRepository;
     private final AuditoriaConsumoRepository auditoriaRepository;
+    private final EnturmacaoRepository enturmacaoRepository;
     private final TurnoResolver turnoResolver;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
     private final Duration bloqueioRepeticao;
 
     public ValidacaoConsumoService(AlunoRepository alunoRepository, CardapioRepository cardapioRepository,
-                                    AuditoriaConsumoRepository auditoriaRepository, TurnoResolver turnoResolver,
+                                    AuditoriaConsumoRepository auditoriaRepository,
+                                    EnturmacaoRepository enturmacaoRepository, TurnoResolver turnoResolver,
                                     TransactionTemplate transactionTemplate, Clock clock,
                                     @Value("${merenda.fila.bloqueio-repeticao:2m}")
                                     Duration bloqueioRepeticao) {
         this.alunoRepository = alunoRepository;
         this.cardapioRepository = cardapioRepository;
         this.auditoriaRepository = auditoriaRepository;
+        this.enturmacaoRepository = enturmacaoRepository;
         this.turnoResolver = turnoResolver;
         this.transactionTemplate = transactionTemplate;
         this.clock = clock;
@@ -96,8 +101,11 @@ public class ValidacaoConsumoService {
     private AuditoriaConsumo novaAuditoria(Aluno aluno, Cardapio cardapio, LocalDate data, Turno turno, Instant agora,
                                             ValidarConsumoRequest request, ResultadoConsumo resultado, String motivo,
                                             String chave) {
+        var turma = enturmacaoRepository.vigenteEm(aluno.getId(), data).map(e -> e.getTurma()).orElse(null);
         return new AuditoriaConsumo(UUID.randomUUID(), aluno, cardapio, data, turno, agora,
-            request.metodoIdentificacao(), resultado, motivo, UUID.randomUUID(), chave);
+            request.metodoIdentificacao(), resultado, motivo, UUID.randomUUID(), chave,
+            turma == null ? null : turma.getId(),
+            turma == null ? AuditoriaConsumo.SEM_TURMA : turma.getCodigo());
     }
 
     private ValidarConsumoResponse bloqueio(Aluno aluno, Cardapio cardapio, Turno turno, String motivo) {

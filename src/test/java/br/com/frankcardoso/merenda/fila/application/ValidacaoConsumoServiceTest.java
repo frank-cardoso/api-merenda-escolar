@@ -18,6 +18,9 @@ import br.com.frankcardoso.merenda.fila.domain.MetodoIdentificacao;
 import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
+import br.com.frankcardoso.merenda.turma.domain.Enturmacao;
+import br.com.frankcardoso.merenda.turma.domain.Turma;
+import br.com.frankcardoso.merenda.turma.infrastructure.EnturmacaoRepository;
 import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.Duration;
@@ -53,6 +56,9 @@ class ValidacaoConsumoServiceTest {
     private AuditoriaConsumoRepository auditoriaRepository;
 
     @Mock
+    private EnturmacaoRepository enturmacaoRepository;
+
+    @Mock
     private TransactionTemplate transactionTemplate;
 
     private final TurnoResolver turnoResolver = new TurnoResolver();
@@ -69,8 +75,8 @@ class ValidacaoConsumoServiceTest {
             "ALU-001",
             "2026001",
             "Ana Souza",
-            "3A",
             true,
+            null,
             AGORA
         );
         cardapio = new Cardapio(
@@ -87,6 +93,7 @@ class ValidacaoConsumoServiceTest {
             alunoRepository,
             cardapioRepository,
             auditoriaRepository,
+            enturmacaoRepository,
             turnoResolver,
             transactionTemplate,
             clock,
@@ -142,6 +149,62 @@ class ValidacaoConsumoServiceTest {
 
         assertThat(lock).isNotNull();
         assertThat(lock.value()).isEqualTo(LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    @Test
+    void carimbaTurmaVigenteNaDataDoConsumo() {
+        configurarAlunoECardapio();
+        var turma = new Turma(UUID.randomUUID(), "8A", "8o ano A", Turno.NOITE, 30, null, AGORA);
+        when(enturmacaoRepository.vigenteEm(aluno.getId(), DATA_OPERACIONAL)).thenReturn(Optional.of(
+            new Enturmacao(UUID.randomUUID(), aluno, turma, DATA_OPERACIONAL.minusDays(30), null, null)));
+
+        service.validar(new ValidarConsumoRequest("ALU-001", MetodoIdentificacao.QR_CODE));
+
+        var captor = ArgumentCaptor.forClass(AuditoriaConsumo.class);
+        verify(auditoriaRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getTurmaNome()).isEqualTo("8A");
+        assertThat(captor.getValue().getTurmaId()).isEqualTo(turma.getId());
+    }
+
+    @Test
+    void carimbaTurmaTambemNoBloqueio() {
+        configurarAlunoECardapio();
+        var turma = new Turma(UUID.randomUUID(), "8A", "8o ano A", Turno.NOITE, 30, null, AGORA);
+        when(enturmacaoRepository.vigenteEm(aluno.getId(), DATA_OPERACIONAL)).thenReturn(Optional.of(
+            new Enturmacao(UUID.randomUUID(), aluno, turma, DATA_OPERACIONAL.minusDays(30), null, null)));
+        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTurnoAndResultadoAndInstanteGreaterThanEqual(
+            aluno.getId(), DATA_OPERACIONAL, Turno.NOITE, ResultadoConsumo.AUTORIZADO,
+            AGORA.minus(Duration.ofMinutes(2)))).thenReturn(true);
+
+        service.validar(new ValidarConsumoRequest("ALU-001", MetodoIdentificacao.QR_CODE));
+
+        var captor = ArgumentCaptor.forClass(AuditoriaConsumo.class);
+        verify(auditoriaRepository).save(captor.capture());
+        assertThat(captor.getValue().getTurmaNome()).isEqualTo("8A");
+        assertThat(captor.getValue().getTurmaId()).isEqualTo(turma.getId());
+    }
+
+    @Test
+    void carimbaSemTurmaQuandoNaoHaEnturmacaoVigente() {
+        configurarAlunoECardapio();
+        when(enturmacaoRepository.vigenteEm(aluno.getId(), DATA_OPERACIONAL)).thenReturn(Optional.empty());
+
+        service.validar(new ValidarConsumoRequest("ALU-001", MetodoIdentificacao.QR_CODE));
+
+        var captor = ArgumentCaptor.forClass(AuditoriaConsumo.class);
+        verify(auditoriaRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getTurmaId()).isNull();
+        assertThat(captor.getValue().getTurmaNome()).isEqualTo("Sem turma");
+    }
+
+    @Test
+    void autorizaMesmoSemEnturmacaoVigente() {
+        configurarAlunoECardapio();
+        when(enturmacaoRepository.vigenteEm(aluno.getId(), DATA_OPERACIONAL)).thenReturn(Optional.empty());
+
+        var resposta = service.validar(new ValidarConsumoRequest("ALU-001", MetodoIdentificacao.QR_CODE));
+
+        assertThat(resposta.resultado()).isEqualTo(ResultadoConsumo.AUTORIZADO);
     }
 
     private void configurarAlunoECardapio() {

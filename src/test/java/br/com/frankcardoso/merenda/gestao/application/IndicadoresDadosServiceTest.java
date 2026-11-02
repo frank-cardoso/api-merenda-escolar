@@ -40,19 +40,19 @@ class IndicadoresDadosServiceTest {
         receitas.save(new Receita(ID_ARROZ, "Arroz", null));
         receitas.save(new Receita(ID_FORA, "Fora da janela", null));
         var aluno = alunos.save(new Aluno(UUID.randomUUID(), "TEST-IND", "TEST-IND", "Teste",
-            "Turma Teste", true, Instant.now()));
+            true, null, Instant.now()));
         var cardapio = cardapios.save(new Cardapio(UUID.randomUUID(), data, Turno.MANHA,
             "Teste", "", "[]", 100, true));
         for (var resultado : new ResultadoConsumo[]{ResultadoConsumo.AUTORIZADO,
                 ResultadoConsumo.AUTORIZADO, ResultadoConsumo.BLOQUEADO}) {
             auditorias.save(new AuditoriaConsumo(UUID.randomUUID(), aluno, cardapio, data,
                 Turno.MANHA, Instant.now(), MetodoIdentificacao.QR_CODE, resultado, null,
-                UUID.randomUUID(), null));
+                UUID.randomUUID(), null, null, AuditoriaConsumo.SEM_TURMA));
         }
         // Dia anterior não entra no atendimento do dia.
         auditorias.save(new AuditoriaConsumo(UUID.randomUUID(), aluno, cardapio, data.minusDays(1),
             Turno.MANHA, Instant.now(), MetodoIdentificacao.QR_CODE, ResultadoConsumo.AUTORIZADO,
-            null, UUID.randomUUID(), null));
+            null, UUID.randomUUID(), null, null, AuditoriaConsumo.SEM_TURMA));
         historicos.save(new HistoricoConsumo(UUID.randomUUID(), data.minusDays(1), Turno.MANHA,
             1, "Almoço", ID_ARROZ, 100, null, "TESTE"));
         historicos.save(new HistoricoConsumo(UUID.randomUUID(), data.minusDays(2), Turno.MANHA,
@@ -65,7 +65,7 @@ class IndicadoresDadosServiceTest {
         assertThat(input.consumosRegistrados()).isEqualTo(2);
         assertThat(input.alunosUnicos()).isEqualTo(1);
         assertThat(input.turmas()).singleElement().satisfies(turma -> {
-            assertThat(turma.turma()).isEqualTo("Turma Teste");
+            assertThat(turma.turma()).isEqualTo("Sem turma");
             assertThat(turma.alunosUnicos()).isEqualTo(1);
             assertThat(turma.consumosRegistrados()).isEqualTo(2);
         });

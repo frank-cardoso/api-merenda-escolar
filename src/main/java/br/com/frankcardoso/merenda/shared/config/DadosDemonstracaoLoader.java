@@ -12,17 +12,25 @@ import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.medicao.domain.MedicaoSobra;
 import br.com.frankcardoso.merenda.medicao.infrastructure.MedicaoSobraRepository;
+import br.com.frankcardoso.merenda.turma.application.EnturmacaoService;
+import br.com.frankcardoso.merenda.turma.domain.Enturmacao;
+import br.com.frankcardoso.merenda.turma.domain.Turma;
+import br.com.frankcardoso.merenda.turma.infrastructure.EnturmacaoRepository;
+import br.com.frankcardoso.merenda.turma.infrastructure.TurmaRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -57,7 +65,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class DadosDemonstracaoLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(DadosDemonstracaoLoader.class);
-    private static final ZoneId ZONA_OPERACIONAL = ZoneId.of("America/Sao_Paulo");
+    private static final int TURMAS_SINTETICAS = 9;
+    private static final int CAPACIDADE_TURMA = 30;
 
     /** Turnos com historico sintetico. NOITE fica de fora: nunca foi usado em producao. */
     private static final Set<Turno> TURNOS_COM_MOVIMENTO =
@@ -73,6 +82,22 @@ public class DadosDemonstracaoLoader {
      */
     private static final double VARIACAO_ADESAO = 0.04;
     private static final double PROPORCAO_BLOQUEIOS = 0.04;
+    /**
+     * Fracao dos alunos autorizados que bipa uma segunda vez (apos a janela de bloqueio da fila),
+     * por serie da turma: 1A-3A repetem mais, 7A-9A quase nao. O padrao e deterministico por turma
+     * de proposito: o relatorio de IA narra as repeticoes, e a diferenca entre turmas precisa ter
+     * uma explicacao defensavel (alunos menores repetem o prato e perdem a primeira leitura com
+     * mais frequencia), nao ser fruto de sorteio uniforme.
+     */
+    private static double taxaDeRepeticao(String codigoDaTurma) {
+        String digitos = codigoDaTurma == null ? "" : codigoDaTurma.replaceAll("\\D", "");
+        int serie = digitos.isEmpty() ? 0 : Integer.parseInt(digitos);
+        if (serie >= 1 && serie <= 3) return 0.30;
+        if (serie >= 4 && serie <= 6) return 0.15;
+        if (serie >= 7 && serie <= 9) return 0.05;
+        return 0;
+    }
+
     private static final String[] MOTIVOS_BLOQUEIO = {"CONSUMO_JA_REGISTRADO", "ALUNO_NAO_ENCONTRADO_OU_INATIVO"};
 
     private final AlunoRepository alunos;
@@ -81,6 +106,9 @@ public class DadosDemonstracaoLoader {
     private final MedicaoSobraRepository medicoes;
     private final CatalogoItensDemonstracao catalogo;
     private final ReceitaRepository receitas;
+    private final TurmaRepository turmas;
+    private final EnturmacaoRepository enturmacoes;
+    private final EnturmacaoService enturmacaoService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final int diasDeHistorico;
@@ -93,6 +121,9 @@ public class DadosDemonstracaoLoader {
         MedicaoSobraRepository medicoes,
         CatalogoItensDemonstracao catalogo,
         ReceitaRepository receitas,
+        TurmaRepository turmas,
+        EnturmacaoRepository enturmacoes,
+        EnturmacaoService enturmacaoService,
         ObjectMapper objectMapper,
         Clock clock,
         // Mantém dados suficientes para consultar qualquer referência dos últimos 30 dias
@@ -106,6 +137,9 @@ public class DadosDemonstracaoLoader {
         this.medicoes = medicoes;
         this.catalogo = catalogo;
         this.receitas = receitas;
+        this.turmas = turmas;
+        this.enturmacoes = enturmacoes;
+        this.enturmacaoService = enturmacaoService;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.diasDeHistorico = diasDeHistorico;
@@ -119,8 +153,11 @@ public class DadosDemonstracaoLoader {
 
         var rng = new Random(2026);
         Instant agora = Instant.now(clock);
-        List<Aluno> turma = garantirAlunos(agora);
-        LocalDate hoje = LocalDate.now(clock.withZone(ZONA_OPERACIONAL));
+        LocalDate hoje = LocalDate.now(clock.withZone(ApplicationConfig.ZONA_OPERACIONAL));
+        // Turmas e enturmacoes precisam existir antes de qualquer consumo: a auditoria nasce
+        // com a turma vigente carimbada, e consumo gerado antes do vinculo cairia em "Sem turma".
+        List<Aluno> turma = garantirAlunos(agora, hoje);
+        Map<UUID, List<Enturmacao>> vinculos = carregarVinculos(turma);
 
         corrigirCardapiosDemonstracao(rng);
 
@@ -131,7 +168,7 @@ public class DadosDemonstracaoLoader {
 
             for (Turno turno : TURNOS_COM_MOVIMENTO) {
                 var cardapio = garantirCardapio(dia, turno, rng);
-                consumosCriados += gerarConsumos(cardapio, dia, turno, turma, rng, agora);
+                consumosCriados += gerarConsumos(cardapio, dia, turno, turma, vinculos, rng, agora);
             }
         }
 
@@ -148,27 +185,79 @@ public class DadosDemonstracaoLoader {
         }
     }
 
-    private List<Aluno> garantirAlunos(Instant agora) {
+    private List<Aluno> garantirAlunos(Instant agora, LocalDate hoje) {
         List<Aluno> existentes = alunos.findAll();
-        if (existentes.size() >= alunosNecessarios) return existentes;
+        if (existentes.size() < alunosNecessarios) {
+            existentes.addAll(criarAlunos(existentes.size(), agora));
+        }
+        garantirEnturmacoes(existentes, agora, hoje);
+        return existentes;
+    }
+
+    private List<Aluno> criarAlunos(int jaExistentes, Instant agora) {
 
         List<Aluno> novos = new ArrayList<>();
-        for (int numero = existentes.size() + 1; numero <= alunosNecessarios; numero++) {
+        for (int numero = jaExistentes + 1; numero <= alunosNecessarios; numero++) {
             novos.add(new Aluno(
                 UUID.randomUUID(),
                 "ALU-%04d".formatted(numero),
                 "2026%04d".formatted(numero),
                 "Aluno Demonstracao %d".formatted(numero),
-                "%dA".formatted(1 + (numero % 9)),
                 true,
+                null,
                 agora
             ));
         }
         alunos.saveAll(novos);
         LOG.info("Dados de demonstracao: {} alunos criados", novos.size());
+        return novos;
+    }
 
-        existentes.addAll(novos);
-        return existentes;
+    /**
+     * Cada aluno sem vinculo entra na turma "%dA" derivada do numero do codigo (1A a 9A), desde
+     * antes do primeiro dia do historico. O aluno de menor numero entre os recem-enturmados
+     * troca para a turma seguinte no meio do intervalo, para a transferencia ter o que mostrar.
+     * Tudo passa pelo EnturmacaoService, que guarda o invariante de nao-sobreposicao.
+     */
+    private void garantirEnturmacoes(List<Aluno> todos, Instant agora, LocalDate hoje) {
+        Map<String, Turma> porCodigo = new HashMap<>();
+        for (int n = 1; n <= TURMAS_SINTETICAS; n++) {
+            String codigo = codigoDaTurma(n);
+            porCodigo.put(codigo, turmas.findByCodigo(codigo).orElseGet(() -> turmas.save(new Turma(
+                UUID.randomUUID(), codigo, "Turma " + codigo, Turno.MANHA, CAPACIDADE_TURMA, null, agora))));
+        }
+
+        LocalDate inicio = hoje.minusDays(diasDeHistorico + 1L);
+        List<Aluno> enturmados = new ArrayList<>();
+        for (Aluno aluno : todos) {
+            if (!enturmacoes.findByAlunoIdOrderByDataInicioDesc(aluno.getId()).isEmpty()) continue;
+            int numero = numeroDoCodigo(aluno);
+            enturmacaoService.enturmar(aluno.getId(), porCodigo.get(codigoDaTurma(1 + numero % TURMAS_SINTETICAS)).getId(), inicio);
+            enturmados.add(aluno);
+        }
+
+        enturmados.stream().min(Comparator.comparingInt(this::numeroDoCodigo)).ifPresent(aluno -> {
+            int proxima = 1 + (numeroDoCodigo(aluno) + 1) % TURMAS_SINTETICAS;
+            enturmacaoService.transferir(aluno.getId(), porCodigo.get(codigoDaTurma(proxima)).getId(),
+                hoje.minusDays(diasDeHistorico / 2));
+        });
+    }
+
+    private static String codigoDaTurma(int numero) {
+        return "%dA".formatted(numero);
+    }
+
+    private int numeroDoCodigo(Aluno aluno) {
+        String digitos = aluno.getCodigoPublico().replaceAll("\\D", "");
+        return digitos.isEmpty() ? 0 : Integer.parseInt(digitos);
+    }
+
+    private Map<UUID, List<Enturmacao>> carregarVinculos(List<Aluno> todos) {
+        Map<UUID, List<Enturmacao>> porAluno = new HashMap<>();
+        for (Aluno aluno : todos) {
+            porAluno.put(aluno.getId(), enturmacoes.findByAlunoIdOrderByDataInicioDesc(aluno.getId()));
+        }
+        return porAluno;
     }
 
     private Cardapio garantirCardapio(LocalDate dia, Turno turno, Random rng) {
@@ -283,7 +372,7 @@ public class DadosDemonstracaoLoader {
     }
 
     private long gerarConsumos(Cardapio cardapio, LocalDate dia, Turno turno, List<Aluno> turma,
-                               Random rng, Instant agora) {
+                               Map<UUID, List<Enturmacao>> vinculos, Random rng, Instant agora) {
         // Idempotencia: se o dia e turno ja tem movimento, nao mexe. Preserva o que a tela da
         // fila registrou na mao.
         if (auditorias.countByDataOperacionalAndTurnoAndResultado(
@@ -302,17 +391,30 @@ public class DadosDemonstracaoLoader {
         java.util.Collections.shuffle(embaralhados, rng);
 
         List<AuditoriaConsumo> registros = new ArrayList<>(autorizados + bloqueados);
+        List<AuditoriaConsumo> primeiras = new ArrayList<>(autorizados);
         for (int indice = 0; indice < autorizados; indice++) {
             Aluno aluno = embaralhados.get(indice);
-            registros.add(criar(aluno, cardapio, dia, turno, rng, ResultadoConsumo.AUTORIZADO, null,
-                chave(aluno, dia, turno)));
+            var primeira = criar(aluno, cardapio, dia, turno, vinculos, rng, ResultadoConsumo.AUTORIZADO, null,
+                chave(aluno, dia, turno));
+            primeiras.add(primeira);
+            registros.add(primeira);
+        }
+
+        // Repeticao: mesma via de criar(), entao a turma carimbada e a mesma da primeira. A chave
+        // unica fica so na primeira; a fila real tambem grava chave nula nas autorizacoes seguintes.
+        for (int indice = 0; indice < autorizados; indice++) {
+            var primeira = primeiras.get(indice);
+            if (rng.nextDouble() >= taxaDeRepeticao(primeira.getTurmaNome())) continue;
+            Instant depoisDaJanela = primeira.getInstante().plus(Duration.ofMinutes(3 + rng.nextInt(15)));
+            registros.add(criar(embaralhados.get(indice), cardapio, dia, turno, vinculos, rng,
+                ResultadoConsumo.AUTORIZADO, null, null, depoisDaJanela));
         }
 
         // Bloqueios reusam alunos que ja consumiram — o motivo mais comum na fila e justamente
         // a segunda tentativa no mesmo turno. Chave nula porque a unica cabe so ao autorizado.
         for (int indice = 0; indice < bloqueados && indice < autorizados; indice++) {
             Aluno aluno = embaralhados.get(indice);
-            registros.add(criar(aluno, cardapio, dia, turno, rng, ResultadoConsumo.BLOQUEADO,
+            registros.add(criar(aluno, cardapio, dia, turno, vinculos, rng, ResultadoConsumo.BLOQUEADO,
                 MOTIVOS_BLOQUEIO[rng.nextInt(MOTIVOS_BLOQUEIO.length)], null));
         }
 
@@ -321,20 +423,33 @@ public class DadosDemonstracaoLoader {
     }
 
     private AuditoriaConsumo criar(Aluno aluno, Cardapio cardapio, LocalDate dia, Turno turno,
-                                   Random rng, ResultadoConsumo resultado, String motivo,
-                                   String chave) {
+                                   Map<UUID, List<Enturmacao>> vinculos, Random rng,
+                                   ResultadoConsumo resultado, String motivo, String chave) {
+        return criar(aluno, cardapio, dia, turno, vinculos, rng, resultado, motivo, chave,
+            instanteNoTurno(dia, turno, rng));
+    }
+
+    private AuditoriaConsumo criar(Aluno aluno, Cardapio cardapio, LocalDate dia, Turno turno,
+                                   Map<UUID, List<Enturmacao>> vinculos, Random rng,
+                                   ResultadoConsumo resultado, String motivo, String chave,
+                                   Instant instante) {
+        Turma vigente = vinculos.getOrDefault(aluno.getId(), List.of()).stream()
+            .filter(vinculo -> vinculo.vigenteEm(dia))
+            .findFirst().map(Enturmacao::getTurma).orElse(null);
         return new AuditoriaConsumo(
             UUID.randomUUID(),
             aluno,
             cardapio,
             dia,
             turno,
-            instanteNoTurno(dia, turno, rng),
+            instante,
             rng.nextInt(10) == 0 ? MetodoIdentificacao.FACIAL : MetodoIdentificacao.QR_CODE,
             resultado,
             motivo,
             UUID.randomUUID(),
-            chave
+            chave,
+            vigente == null ? null : vigente.getId(),
+            vigente == null ? AuditoriaConsumo.SEM_TURMA : vigente.getCodigo()
         );
     }
 
@@ -372,6 +487,6 @@ public class DadosDemonstracaoLoader {
             case NOITE -> 19;
         };
         LocalTime horario = LocalTime.of(horaBase, rng.nextInt(60));
-        return dia.atTime(horario).atZone(ZONA_OPERACIONAL).toInstant();
+        return dia.atTime(horario).atZone(ApplicationConfig.ZONA_OPERACIONAL).toInstant();
     }
 }
