@@ -2,6 +2,7 @@ package br.com.frankcardoso.merenda.aluno.application;
 
 import br.com.frankcardoso.merenda.aluno.domain.Aluno;
 import br.com.frankcardoso.merenda.aluno.infrastructure.AlunoRepository;
+import br.com.frankcardoso.merenda.biometria.application.IdentificacaoFacialService;
 import br.com.frankcardoso.merenda.biometria.application.port.ReconhecimentoFacialPort;
 import br.com.frankcardoso.merenda.shared.config.ApplicationConfig;
 import br.com.frankcardoso.merenda.shared.web.ConflitoCadastroException;
@@ -32,16 +33,18 @@ public class AlunoService {
     private final EnturmacaoRepository enturmacoes;
     private final EnturmacaoService enturmacaoService;
     private final ReconhecimentoFacialPort reconhecimentoFacial;
+    private final IdentificacaoFacialService identificacaoFacial;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
     public AlunoService(AlunoRepository alunos, EnturmacaoRepository enturmacoes,
                         EnturmacaoService enturmacaoService, ReconhecimentoFacialPort reconhecimentoFacial,
-                        ObjectMapper objectMapper, Clock clock) {
+                        IdentificacaoFacialService identificacaoFacial, ObjectMapper objectMapper, Clock clock) {
         this.alunos = alunos;
         this.enturmacoes = enturmacoes;
         this.enturmacaoService = enturmacaoService;
         this.reconhecimentoFacial = reconhecimentoFacial;
+        this.identificacaoFacial = identificacaoFacial;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -92,6 +95,10 @@ public class AlunoService {
     @Transactional
     public AlunoDetalhe cadastrarRosto(UUID id, String fotoBase64) {
         Aluno aluno = alunos.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException("Aluno", id));
+        identificacaoFacial.alunoComMesmoRosto(fotoBase64, id).ifPresent(outro -> {
+            throw new ConflitoCadastroException("Este rosto já está cadastrado para o aluno "
+                + outro.getCodigoPublico() + " (" + outro.getNome() + ").");
+        });
         var embedding = reconhecimentoFacial.gerarEmbedding(fotoBase64);
         aluno.cadastrarRosto(escreverJson(embedding));
         return detalhe(aluno);

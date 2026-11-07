@@ -3,13 +3,18 @@ package br.com.frankcardoso.merenda.fila.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import br.com.frankcardoso.merenda.aluno.domain.Aluno;
 import br.com.frankcardoso.merenda.aluno.infrastructure.AlunoRepository;
-import br.com.frankcardoso.merenda.biometria.application.port.ReconhecimentoFacialPort;
+import br.com.frankcardoso.merenda.biometria.application.IdentificacaoFacial;
+import br.com.frankcardoso.merenda.biometria.application.IdentificacaoFacial.Resultado;
+import br.com.frankcardoso.merenda.biometria.application.IdentificacaoFacialService;
+import br.com.frankcardoso.merenda.biometria.domain.ReconhecimentoFacialIndisponivelException;
+import br.com.frankcardoso.merenda.biometria.domain.RostoNaoDetectadoException;
 import br.com.frankcardoso.merenda.cardapio.domain.Cardapio;
 import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
 import br.com.frankcardoso.merenda.fila.api.ValidarConsumoRequest;
@@ -22,7 +27,6 @@ import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepositor
 import br.com.frankcardoso.merenda.turma.domain.Enturmacao;
 import br.com.frankcardoso.merenda.turma.domain.Turma;
 import br.com.frankcardoso.merenda.turma.infrastructure.EnturmacaoRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.Duration;
@@ -61,7 +65,7 @@ class ValidacaoConsumoServiceTest {
     private EnturmacaoRepository enturmacaoRepository;
 
     @Mock
-    private ReconhecimentoFacialPort reconhecimentoFacial;
+    private IdentificacaoFacialService identificacaoFacial;
 
     @Mock
     private TransactionTemplate transactionTemplate;
@@ -100,8 +104,7 @@ class ValidacaoConsumoServiceTest {
             auditoriaRepository,
             enturmacaoRepository,
             turnoResolver,
-            reconhecimentoFacial,
-            new ObjectMapper(),
+            identificacaoFacial,
             transactionTemplate,
             clock,
             Duration.ofMinutes(2)
@@ -156,6 +159,23 @@ class ValidacaoConsumoServiceTest {
 
         assertThat(lock).isNotNull();
         assertThat(lock.value()).isEqualTo(LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    @Test
+    void deveBuscarAlunoFacialComLockPessimistaParaEvitarDuplaAutorizacaoConcorrente() throws NoSuchMethodException {
+        var metodo = AlunoRepository.class.getMethod("findByIdAndAtivoTrue", UUID.class);
+
+        var lock = metodo.getAnnotation(Lock.class);
+
+        assertThat(lock).isNotNull();
+        assertThat(lock.value()).isEqualTo(LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    @Test
+    void facialComFalhaInesperadaBloqueiaComIndisponivelSemAuditoria() {
+        when(identificacaoFacial.identificar("foto-base64")).thenThrow(new IllegalStateException("inesperado"));
+
+        assertBloqueioSemAuditoria(facial("foto-base64", null), "RECONHECIMENTO_FACIAL_INDISPONIVEL");
     }
 
     @Test
@@ -215,71 +235,125 @@ class ValidacaoConsumoServiceTest {
     }
 
     @Test
-    void facialSemFotoBloqueiaComMotivoFotoNaoInformada() {
-        executarTransactionTemplateImediatamente();
-        when(alunoRepository.findByCodigoPublicoAndAtivoTrue("ALU-001")).thenReturn(Optional.of(aluno));
+    void facialReconhecidoAutorizaOAlunoIdentificado() {
+        var outro = alunoReconhecido();
+        configurarFacialReconhecido(outro);
 
-        var resposta = service.validar(new ValidarConsumoRequest("ALU-001", MetodoIdentificacao.FACIAL, null));
-
-        assertThat(resposta.resultado()).isEqualTo(ResultadoConsumo.BLOQUEADO);
-        assertThat(resposta.motivo()).isEqualTo("FOTO_NAO_INFORMADA");
-        verify(reconhecimentoFacial, never()).verificar(any(), any());
-    }
-
-    @Test
-    void facialComAlunoSemRostoCadastradoBloqueia() {
-        executarTransactionTemplateImediatamente();
-        when(alunoRepository.findByCodigoPublicoAndAtivoTrue("ALU-001")).thenReturn(Optional.of(aluno));
-
-        var resposta = service.validar(
-            new ValidarConsumoRequest("ALU-001", MetodoIdentificacao.FACIAL, "foto-base64"));
-
-        assertThat(resposta.resultado()).isEqualTo(ResultadoConsumo.BLOQUEADO);
-        assertThat(resposta.motivo()).isEqualTo("ALUNO_SEM_ROSTO_CADASTRADO");
-        verify(reconhecimentoFacial, never()).verificar(any(), any());
-    }
-
-    @Test
-    void facialComRostoQueConfereAutoriza() {
-        configurarAlunoECardapio();
-        aluno.cadastrarRosto("[0.1,0.2,0.3]");
-        when(reconhecimentoFacial.verificar("foto-base64", java.util.List.of(0.1f, 0.2f, 0.3f)))
-            .thenReturn(new ReconhecimentoFacialPort.ResultadoVerificacaoFacial(true, 0.1, 0.4, "Facenet"));
-
-        var resposta = service.validar(
-            new ValidarConsumoRequest("ALU-001", MetodoIdentificacao.FACIAL, "foto-base64"));
+        var resposta = service.validar(facial("foto-base64", null));
 
         assertThat(resposta.resultado()).isEqualTo(ResultadoConsumo.AUTORIZADO);
+        assertThat(resposta.alunoNome()).isEqualTo("Bia Lima");
+        var captor = ArgumentCaptor.forClass(AuditoriaConsumo.class);
+        verify(auditoriaRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue()).hasFieldOrPropertyWithValue("metodoIdentificacao", MetodoIdentificacao.FACIAL);
     }
 
     @Test
-    void facialComRostoQueNaoConfereBloqueia() {
-        executarTransactionTemplateImediatamente();
-        when(alunoRepository.findByCodigoPublicoAndAtivoTrue("ALU-001")).thenReturn(Optional.of(aluno));
-        aluno.cadastrarRosto("[0.1,0.2,0.3]");
-        when(reconhecimentoFacial.verificar("foto-base64", java.util.List.of(0.1f, 0.2f, 0.3f)))
-            .thenReturn(new ReconhecimentoFacialPort.ResultadoVerificacaoFacial(false, 0.9, 0.4, "Facenet"));
+    void facialIgnoraAlunoCodigoDoCorpo() {
+        configurarFacialReconhecido(alunoReconhecido());
 
-        var resposta = service.validar(
-            new ValidarConsumoRequest("ALU-001", MetodoIdentificacao.FACIAL, "foto-base64"));
+        var resposta = service.validar(facial("foto-base64", "ALU-999"));
 
-        assertThat(resposta.resultado()).isEqualTo(ResultadoConsumo.BLOQUEADO);
-        assertThat(resposta.motivo()).isEqualTo("ROSTO_NAO_CONFERE");
+        assertThat(resposta.resultado()).isEqualTo(ResultadoConsumo.AUTORIZADO);
+        assertThat(resposta.alunoNome()).isEqualTo("Bia Lima");
+        verify(alunoRepository, never()).findByCodigoPublicoAndAtivoTrue(any());
     }
 
     @Test
-    void facialSemRostoDetectavelNaFotoBloqueia() {
-        executarTransactionTemplateImediatamente();
-        when(alunoRepository.findByCodigoPublicoAndAtivoTrue("ALU-001")).thenReturn(Optional.of(aluno));
-        aluno.cadastrarRosto("[0.1,0.2,0.3]");
-        when(reconhecimentoFacial.verificar(any(), any()))
-            .thenThrow(new br.com.frankcardoso.merenda.biometria.domain.RostoNaoDetectadoException("sem rosto"));
+    void facialIdentificaAntesDaTransacao() {
+        configurarFacialReconhecido(alunoReconhecido());
 
-        var resposta = service.validar(
-            new ValidarConsumoRequest("ALU-001", MetodoIdentificacao.FACIAL, "foto-base64"));
+        service.validar(facial("foto-base64", null));
+
+        var ordem = inOrder(identificacaoFacial, transactionTemplate);
+        ordem.verify(identificacaoFacial).identificar("foto-base64");
+        ordem.verify(transactionTemplate).execute(any());
+    }
+
+    @Test
+    void facialSemFotoBloqueiaComFotoNaoInformada() {
+        assertBloqueioSemAuditoria(facial(null, null), "FOTO_NAO_INFORMADA");
+        assertBloqueioSemAuditoria(facial("  ", null), "FOTO_NAO_INFORMADA");
+        verify(identificacaoFacial, never()).identificar(any());
+    }
+
+    @Test
+    void facialSemCandidatosBloqueiaComNenhumRostoCadastrado() {
+        when(identificacaoFacial.identificar("foto-base64"))
+            .thenReturn(new IdentificacaoFacial(Resultado.SEM_CANDIDATOS, null));
+
+        assertBloqueioSemAuditoria(facial("foto-base64", null), "NENHUM_ROSTO_CADASTRADO");
+    }
+
+    @Test
+    void facialNaoReconhecidoBloqueia() {
+        when(identificacaoFacial.identificar("foto-base64"))
+            .thenReturn(new IdentificacaoFacial(Resultado.NAO_RECONHECIDO, null));
+
+        assertBloqueioSemAuditoria(facial("foto-base64", null), "ROSTO_NAO_RECONHECIDO");
+    }
+
+    @Test
+    void facialAmbiguoBloqueia() {
+        when(identificacaoFacial.identificar("foto-base64"))
+            .thenReturn(new IdentificacaoFacial(Resultado.AMBIGUO, alunoReconhecido()));
+
+        assertBloqueioSemAuditoria(facial("foto-base64", null), "ROSTO_AMBIGUO");
+    }
+
+    @Test
+    void facialSemRostoNaFotoBloqueia() {
+        when(identificacaoFacial.identificar("foto-base64")).thenThrow(new RostoNaoDetectadoException("sem rosto"));
+
+        assertBloqueioSemAuditoria(facial("foto-base64", null), "ROSTO_NAO_DETECTADO");
+    }
+
+    @Test
+    void facialComServicoForaDoArBloqueiaComIndisponivel() {
+        when(identificacaoFacial.identificar("foto-base64"))
+            .thenThrow(new ReconhecimentoFacialIndisponivelException("fora do ar", null));
+
+        assertBloqueioSemAuditoria(facial("foto-base64", null), "RECONHECIMENTO_FACIAL_INDISPONIVEL");
+    }
+
+    @Test
+    void facialReconhecidoSegueBloqueioDeRepeticao() {
+        var reconhecido = alunoReconhecido();
+        configurarFacialReconhecido(reconhecido);
+        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTurnoAndResultadoAndInstanteGreaterThanEqual(
+            reconhecido.getId(), DATA_OPERACIONAL, Turno.NOITE, ResultadoConsumo.AUTORIZADO,
+            AGORA.minus(Duration.ofMinutes(2)))).thenReturn(true);
+
+        var resposta = service.validar(facial("foto-base64", null));
 
         assertThat(resposta.resultado()).isEqualTo(ResultadoConsumo.BLOQUEADO);
-        assertThat(resposta.motivo()).isEqualTo("ROSTO_NAO_DETECTADO");
+        assertThat(resposta.motivo()).isEqualTo("CONSUMO_RECENTE_BLOQUEADO");
+    }
+
+    private ValidarConsumoRequest facial(String foto, String alunoCodigo) {
+        return new ValidarConsumoRequest(alunoCodigo, MetodoIdentificacao.FACIAL, foto);
+    }
+
+    private Aluno alunoReconhecido() {
+        return new Aluno(UUID.randomUUID(), "ALU-002", "2026002", "Bia Lima", true, null, AGORA);
+    }
+
+    private void configurarFacialReconhecido(Aluno reconhecido) {
+        executarTransactionTemplateImediatamente();
+        when(identificacaoFacial.identificar("foto-base64"))
+            .thenReturn(new IdentificacaoFacial(Resultado.RECONHECIDO, reconhecido));
+        when(alunoRepository.findByIdAndAtivoTrue(reconhecido.getId())).thenReturn(Optional.of(reconhecido));
+        when(cardapioRepository.findByDataAndTurnoAndAtivoTrue(DATA_OPERACIONAL, Turno.NOITE))
+            .thenReturn(Optional.of(cardapio));
+    }
+
+    private void assertBloqueioSemAuditoria(ValidarConsumoRequest request, String motivo) {
+        var resposta = service.validar(request);
+
+        assertThat(resposta.resultado()).isEqualTo(ResultadoConsumo.BLOQUEADO);
+        assertThat(resposta.motivo()).isEqualTo(motivo);
+        verify(auditoriaRepository, never()).save(any());
+        verify(auditoriaRepository, never()).saveAndFlush(any());
     }
 
     private void configurarAlunoECardapio() {

@@ -26,11 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
  * Carrega o catalogo de receitas e ingredientes antes de qualquer outro loader.
  *
  * A ordem importa: historico e medicao referenciam `receita.id` por FK, entao o catalogo tem de
- * existir primeiro. Dai o {@code @Order(1)} — sem ele a ordem entre listeners do mesmo evento nao
- * e garantida.
+ * existir primeiro. Dai o {@code @Order(1)} no metodo ouvinte (o Spring ignora @Order de classe em
+ * {@code @EventListener}; sem ele a ordem entre listeners do mesmo evento nao e garantida).
  */
 @Component
-@Order(1)
 public class CatalogoLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(CatalogoLoader.class);
@@ -51,6 +50,7 @@ public class CatalogoLoader {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(1)
     @Transactional
     public void carregar() {
         if (receitas.count() == 0) carregarReceitas();

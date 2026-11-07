@@ -31,7 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
  * tabela recarrega.
  */
 @Component
-@Order(3)
 public class MedicaoSobraFakeLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(MedicaoSobraFakeLoader.class);
@@ -50,6 +49,7 @@ public class MedicaoSobraFakeLoader {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(3)
     @Transactional
     public void carregar() {
         if (medicoes.count() == 0) {

@@ -1,20 +1,27 @@
 package br.com.frankcardoso.merenda.biometria.application.port;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Fronteira com o servico de reconhecimento facial (Python/DeepFace).
  *
  * So gera e compara vetores; nunca guarda foto nem embedding — quem guarda e o Java, no
- * cadastro do aluno. Verificacao e sempre 1:1 (contra um aluno ja identificado), nunca busca
- * entre todos os alunos.
+ * cadastro do aluno. Oferece identificacao 1:N: compara a foto com os candidatos que o Java
+ * envia e devolve a decisao, sem consultar banco.
  */
 public interface ReconhecimentoFacialPort {
 
     List<Float> gerarEmbedding(String fotoBase64);
 
-    ResultadoVerificacaoFacial verificar(String fotoBase64, List<Float> embeddingCadastrado);
+    ResultadoIdentificacao identificar(String fotoBase64, List<Candidato> candidatos);
 
-    record ResultadoVerificacaoFacial(boolean confere, double distancia, double limiar, String modelo) {
+    record Candidato(UUID alunoId, List<Float> embedding) {
     }
+
+    record ResultadoIdentificacao(Decisao decisao, UUID melhorCandidatoId, Double distancia,
+                                  Double distanciaSegundo, double limiar, int candidatosIgnorados) {
+    }
+
+    enum Decisao { RECONHECIDO, NAO_RECONHECIDO, AMBIGUO }
 }

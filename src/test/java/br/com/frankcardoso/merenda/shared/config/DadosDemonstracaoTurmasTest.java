@@ -2,6 +2,7 @@ package br.com.frankcardoso.merenda.shared.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import br.com.frankcardoso.merenda.aluno.domain.Aluno;
 import br.com.frankcardoso.merenda.aluno.infrastructure.AlunoRepository;
 import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
 import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaRepository;
@@ -18,6 +19,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +49,8 @@ class DadosDemonstracaoTurmasTest {
     @Autowired EnturmacaoService enturmacaoService;
     @Autowired EntityManager em;
 
+    private Clock relogio;
+
     @BeforeEach
     void carregarDemonstracao() {
         // O banco em memoria e compartilhado entre contextos e pode trazer dados de outro teste.
@@ -57,7 +61,11 @@ class DadosDemonstracaoTurmasTest {
         turmas.deleteAll();
         cardapios.deleteAll();
         em.flush();
-        Clock relogio = Clock.fixed(
+        var comRosto = new Aluno(UUID.randomUUID(), "ALU-9001", "20269001", "Aluno Ficticio", true, null,
+            Instant.now());
+        comRosto.cadastrarRosto("[1.0,0.0]");
+        alunos.saveAndFlush(comRosto);
+        relogio = Clock.fixed(
             HOJE.atTime(10, 0).atZone(ApplicationConfig.ZONA_OPERACIONAL).toInstant(),
             ApplicationConfig.ZONA_OPERACIONAL);
         new DadosDemonstracaoLoader(alunos, cardapios, auditorias, medicoes, catalogo, receitas,
@@ -160,6 +168,28 @@ class DadosDemonstracaoTurmasTest {
             assertThat((Long) p[3]).isEqualTo(2L);
             assertThat((Long) p[4]).as("turma carimbada igual nas duas").isEqualTo(1L);
             assertThat((Long) p[5]).as("chave unica so na primeira").isEqualTo(1L);
+        }
+    }
+
+    @Test
+    void nenhumConsumoGeradoDepoisDoInstanteAtual() {
+        assertThat(auditorias.findAll()).isNotEmpty()
+            .allSatisfy(a -> assertThat(a.getInstante()).isBeforeOrEqualTo(relogio.instant()));
+    }
+
+    @Test
+    void alunoComRostoFicaForaDoConsumoSintetico() {
+        var aluno = alunos.findByCodigoPublico("ALU-9001").orElseThrow();
+        Long auditorias = em.createQuery("select count(a) from AuditoriaConsumo a where a.aluno.id = :id",
+            Long.class).setParameter("id", aluno.getId()).getSingleResult();
+        assertThat(auditorias).isZero();
+        assertThat(enturmacoes.vigentesEm(aluno.getId(), HOJE)).hasSize(1);
+    }
+
+    @Test
+    void cardapioDeHojeExisteEmTodosOsTurnos() {
+        for (var turno : br.com.frankcardoso.merenda.fila.domain.Turno.values()) {
+            assertThat(cardapios.findByDataAndTurnoAndAtivoTrue(HOJE, turno)).as(turno.name()).isPresent();
         }
     }
 

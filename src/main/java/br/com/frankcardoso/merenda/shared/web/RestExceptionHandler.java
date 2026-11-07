@@ -1,6 +1,7 @@
 package br.com.frankcardoso.merenda.shared.web;
 
 import br.com.frankcardoso.merenda.biometria.domain.MultiplosRostosDetectadosException;
+import br.com.frankcardoso.merenda.biometria.domain.ReconhecimentoFacialIndisponivelException;
 import br.com.frankcardoso.merenda.biometria.domain.RostoNaoDetectadoException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioDataPassadaException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioDuplicadoException;
@@ -44,6 +45,12 @@ public class RestExceptionHandler {
         RostoNaoDetectadoException.class, MultiplosRostosDetectadosException.class})
     ProblemDetail tratarEntradaInvalida(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.BAD_REQUEST, "Requisicao invalida", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(ReconhecimentoFacialIndisponivelException.class)
+    ProblemDetail tratarReconhecimentoIndisponivel(ReconhecimentoFacialIndisponivelException exception, HttpServletRequest request) {
+        return problema(HttpStatus.SERVICE_UNAVAILABLE, "Servico indisponivel",
+            "Reconhecimento facial indisponível no momento. Tente novamente em instantes.", request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

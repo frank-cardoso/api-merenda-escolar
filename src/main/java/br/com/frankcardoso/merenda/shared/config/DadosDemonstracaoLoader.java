@@ -61,7 +61,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Component
 @Profile("!test")
-@Order(5)
 public class DadosDemonstracaoLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(DadosDemonstracaoLoader.class);
@@ -147,6 +146,7 @@ public class DadosDemonstracaoLoader {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(6)
     @Transactional
     public void carregar() {
         if (diasDeHistorico <= 0) return;
@@ -158,6 +158,9 @@ public class DadosDemonstracaoLoader {
         // com a turma vigente carimbada, e consumo gerado antes do vinculo cairia em "Sem turma".
         List<Aluno> turma = garantirAlunos(agora, hoje);
         Map<UUID, List<Enturmacao>> vinculos = carregarVinculos(turma);
+        // Quem tem rosto cadastrado e reconhecido ao vivo: consumo sintetico no nome dele
+        // poderia bloquear a primeira leitura da apresentacao por "consumo ja registrado".
+        List<Aluno> paraConsumo = turma.stream().filter(aluno -> !aluno.temRostoCadastrado()).toList();
 
         corrigirCardapiosDemonstracao(rng);
 
@@ -168,16 +171,18 @@ public class DadosDemonstracaoLoader {
 
             for (Turno turno : TURNOS_COM_MOVIMENTO) {
                 var cardapio = garantirCardapio(dia, turno, rng);
-                consumosCriados += gerarConsumos(cardapio, dia, turno, turma, vinculos, rng, agora);
+                consumosCriados += gerarConsumos(cardapio, dia, turno, paraConsumo, vinculos, rng, agora);
             }
         }
 
         garantirMedicoesCardapioPrincipal(hoje, rng, agora);
 
-        // NOITE ganha cardapio apenas para hoje, e sem consumo: o turno nao existe em producao,
-        // mas o TurnoResolver da fila resolve NOITE depois das 18h — sem cardapio, testar a
-        // bipagem nesse horario falharia.
-        garantirCardapio(hoje, Turno.NOITE, rng);
+        // Hoje ganha cardapio em todos os turnos, inclusive fim de semana e NOITE (que nao
+        // existe em producao): o TurnoResolver da fila resolve o turno pelo horario, e sem
+        // cardapio a bipagem ao vivo falharia.
+        for (Turno turno : Turno.values()) {
+            garantirCardapio(hoje, turno, rng);
+        }
 
         if (consumosCriados > 0) {
             LOG.info("Dados de demonstracao: {} consumos gerados nos ultimos {} dias",
@@ -418,6 +423,10 @@ public class DadosDemonstracaoLoader {
                 MOTIVOS_BLOQUEIO[rng.nextInt(MOTIVOS_BLOQUEIO.length)], null));
         }
 
+        // Instante futuro nao existe: apresentar as 10h com consumo "da tarde" ja gravado seria
+        // incoerente. O que ficou de fora nao e recuperado: o turno que ja tem AUTORIZADO e pulado
+        // nas cargas seguintes, entao o restante do dia fica sem consumo sintetico.
+        registros.removeIf(registro -> registro.getInstante().isAfter(agora));
         auditorias.saveAll(registros);
         return registros.size();
     }

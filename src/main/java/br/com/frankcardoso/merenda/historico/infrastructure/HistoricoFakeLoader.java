@@ -27,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
  * dados, e apagar a tabela e suficiente para recarregar depois de regerar o CSV.
  */
 @Component
-@Order(2)
 public class HistoricoFakeLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(HistoricoFakeLoader.class);
@@ -43,6 +42,7 @@ public class HistoricoFakeLoader {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(2)
     @Transactional
     public void carregar() {
         if (repository.count() > 0) return;
