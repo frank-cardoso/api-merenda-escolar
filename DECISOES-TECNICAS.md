@@ -344,27 +344,118 @@ ingrediente destacado.
 `INGREDIENTES_NO_RANKING = 3`: a conclusao deterministica cita os tres primeiros, mandar dez ao
 modelo era janela de contexto gasta com ingrediente que ninguem menciona.
 
-## 8. Identificacao fica no QR Code
+## 8. Identificacao facial 1:N, supervisionada, no servidor
 
-A plataforma esta aposentando o reconhecimento facial em nuvem (`attendance-api` mais
-`educacao-attendance-worker`) por qualidade insuficiente. O `plan.md` do legado ja registrava
-"sinalizacao de descontinuacao por problemas operacionais", e o caminho da casa para biometria
-passou a ser hardware dedicado: `betha-bio-sdk`, agente standalone para dispositivos ZK e Intelbras
-iFace.
+A primeira versao deste documento descartava o reconhecimento facial e deixava a fila so no QR
+Code. Isso deixou de valer: a fila tem modo facial 1:N (a foto descobre o aluno, sem digitar
+codigo), alem do QR Code, que continua sendo o caminho de reserva. Esta secao registra a correcao de
+uma premissa errada da versao anterior e as decisoes de hoje.
 
-Isso descarta a fase 3 do plano ("cadastro e reconhecimento facial local no navegador"). O motivo
-nao e so evitar duplicar trabalho: se um servico em nuvem esta sendo desligado por nao ser bom o
-suficiente, fazer o mesmo em `face-api.js` 0.22.2 no dispositivo que a escola tiver sai pior. A
-dependencia estava declarada no frontend e nunca foi importada; foi removida.
+### Correcao de fato sobre o `betha-bio-sdk`
 
-Registro de leitura errada minha, para nao repetir: eu tinha concluido que o worker **nao** estava
-descontinuado, porque encontrei branch ativa (`ED-40538`) com commits recentes. Os commits eram
-`remove instrumentacao de diagnostico` e `anota Fenomeno B aberto` — triagem de um sistema com
-defeito, nao investimento nele. Atividade de commit nao distingue manutencao de evolucao.
+A versao anterior tratava `betha-bio-sdk` como alternativa ao `attendance-api` mais
+`educacao-attendance-worker` e dizia que a plataforma estava aposentando o servico em nuvem. As duas
+afirmacoes estavam erradas. Pela documentacao do time (`Educa/documentacao/documentacao/reconhecimento-facial/`,
+diagramas `arquitetura.png` e `processo-atualizar-foto-aluno.png`) e pela analise do ED-40538, o
+`betha-bio-sdk` e a ponta da escola da **mesma cadeia**: o aparelho Intelbras reconhece localmente,
+o agente envia os registros para `attendance-api`, que publica no SNS/SQS, e o worker grava
+`attendance_lots` e dispara os scripts de presenca e de notificacao aos responsaveis.
 
-Um dos defeitos abertos vale registro por ser de isolamento entre tenants: o `estabelecimentoId`
-chega de um header `App-Context` sem validacao contra o tenant, e alguns tenants mandam id que nao
-existe no schema (TODO no proprio `AttendanceLotProcess`).
+O worker foi corrigido e validado em producao em 2026-08-25. A "aposentadoria" do servico nao foi
+confirmada por nenhuma fonte encontrada, e este documento nao a afirma. O erro de leitura veio de
+tomar atividade de commit (`remove instrumentacao de diagnostico`, `anota Fenomeno B aberto`) por
+sinal de abandono: commit nao distingue manutencao de descontinuacao.
+
+Um defeito aberto daquele servico vale registro por ser de isolamento entre tenants: o
+`estabelecimentoId` chega de um header `App-Context` sem validacao contra o tenant, e alguns tenants
+mandam id que nao existe no schema (TODO no proprio `AttendanceLotProcess`).
+
+### Decisao: tablet ou notebook com supervisao, comparacao no servidor
+
+Na merenda a fila e contagem **supervisionada**: a merendeira esta presente e faz o papel de prova
+de vida. Errar para mais custa pouco (uma refeicao a mais contada); recusar a crianca certa custa
+caro. Por isso webcam de tablet ou notebook, com a comparacao feita no servidor, serve ao caso. O
+terminal com infravermelho (Intelbras, faixa de R$ 2 mil a R$ 6 mil por ponto em anuncios de loja) e o
+caminho para presenca automatica **sem** supervisao, que e outro problema.
+
+As decisoes de desenho:
+
+- **1:N com Facenet e cosseno.** Modelo `Facenet` (128 dimensoes), detector `opencv`, metrica
+  `cosine`, o mesmo no cadastro e na fila: embedding de modelos diferentes nao e comparavel. Limiar
+  do proprio DeepFace, `find_threshold("Facenet", "cosine")` = 0.4.
+- **Reconhece so com margem.** A decisao e `RECONHECIDO` quando a menor distancia fica abaixo do
+  limiar **e** o segundo colocado esta pelo menos `MARGEM_MINIMA = 0.08` mais longe. Perto demais:
+  `AMBIGUO`, e a fila bloqueia e pede QR Code. Acima do limiar: `NAO_RECONHECIDO`. Liberar o aluno
+  errado com confianca e a falha que importa; bloquear na duvida sai barato.
+- **Maior rosto da foto.** Se aparecer mais de um rosto (crianca atras), vale o de maior area,
+  que e o de quem esta na frente da camera. O cadastro continua exigindo exatamente um.
+- **Python nao e dono de dado.** A API manda a foto e os embeddings dos candidatos no pedido
+  (`POST /api/v1/reconhecimento-facial/identificacoes`); o Python compara e responde, e nada fica la.
+  Candidato com embedding de outra dimensao e ignorado e contado na resposta; a API registra aviso.
+- **Identificacao antes da transacao.** O aluno so se conhece depois da identificacao, entao ela
+  roda antes da transacao de validacao, que recebe o aluno ja identificado. Assim a chamada remota
+  nao segura conexao de banco.
+- **Falha nunca vira 500 nem nega a refeicao por silencio.** A leitura sai `BLOQUEADO` com motivo
+  e a tela manda usar o QR: `FOTO_NAO_INFORMADA`, `NENHUM_ROSTO_CADASTRADO`, `ROSTO_NAO_RECONHECIDO`,
+  `ROSTO_AMBIGUO`, `ROSTO_NAO_DETECTADO` e `RECONHECIMENTO_FACIAL_INDISPONIVEL` (Python fora do ar,
+  5xx ou resposta malformada). Nenhum deles grava auditoria, porque nao ha aluno para associar,
+  como em `ALUNO_NAO_ENCONTRADO_OU_INATIVO`.
+- **Cadastro recusa rosto duplicado.** `POST /api/v1/alunos/{id}/rosto` devolve 409 se a mesma face ja
+  estiver em outro aluno ativo (com o codigo e o nome dele na mensagem), e 503 se o servico facial
+  estiver fora. Recadastrar o proprio rosto e permitido. Sem isso, dois cadastros do mesmo rosto
+  tornariam todo reconhecimento daquela pessoa `AMBIGUO`.
+- **So o embedding fica.** A foto nao e gravada na API, no Python nem no front.
+
+### Calibracao com o conjunto de demonstracao
+
+Medido com cinco adultos do LFW (dataset publico) cadastrados como `ALU-9001` a `ALU-9005`, cada
+um testado com uma imagem **diferente** da do cadastro, e um sexto rosto sem cadastro. Das 12
+identidades avaliadas, 7 foram descartadas: 2 sem exatamente um rosto detectavel no cadastro e 5 por
+sairem ambiguas, nao reconhecidas ou com distancia propria acima de 0.30.
+
+| Aluno | Distancia propria | Impostor mais proximo | Margem |
+|---|---|---|---|
+| ALU-9001 | 0.2961 | 0.8763 | 0.5802 |
+| ALU-9002 | 0.2791 | 0.7974 | 0.5183 |
+| ALU-9003 | 0.2945 | 0.7131 | 0.4186 |
+| ALU-9004 | 0.2331 | 0.8570 | 0.6239 |
+| ALU-9005 | 0.2284 | 0.7710 | 0.5426 |
+
+- A distancia propria fica entre 0.23 e 0.30, bem abaixo do limiar 0.4.
+- A menor margem para o impostor mais proximo e 0.4186, muito acima dos 0.08 de `MARGEM_MINIMA`,
+  que por isso foi mantida.
+- O desconhecido ficou a 0.6050 do cadastro mais proximo, acima do limiar: `NAO_RECONHECIDO`.
+
+Isso mostra que o mecanismo separa bem **adultos fotografados em boas condicoes**, com cinco
+cadastros. Nao diz nada sobre criancas, sobre luz de refeitorio nem sobre centenas de cadastros: o
+piso de 0.30 na escolha dos exemplos e uma selecao que favorece o resultado.
+
+### Limitacoes conhecidas
+
+- **Sem prova de vida.** Foto de foto passa, e e isso que permite mostrar a imagem de teste no celular
+  para a webcam. Na merenda supervisionada, a merendeira cobre esse risco.
+- Busca em todos os cadastrados (nao restrita a escola, que ainda nao existe como entidade).
+- Imagens de demonstracao sao de adultos; nenhuma foto de crianca e usada.
+
+### O que faltaria para producao
+
+- **Prova de vida**, se houver uso sem supervisao.
+- **Recadastro periodico**: o rosto de uma crianca muda com o tempo.
+- **Piloto com criancas**, medindo falso aceite e falsa recusa para calibrar limiar e margem; os
+  numeros acima nao servem de base para isso.
+- **LGPD.** Biometria e dado pessoal sensivel (art. 5o, II, e art. 11); dado de crianca exige
+  consentimento especifico de um responsavel (art. 14); o embedding tambem e biometria. Isso pede
+  alternativa sem biometria para quem nao consentir (o QR Code ja e), RIPD, criptografia do embedding,
+  prazo de retencao e exclusao.
+- **Falha de reconhecimento nunca nega a refeicao**: cai para QR Code ou confirmacao do funcionario.
+- **Busca restrita a escola**, que exige a entidade escola.
+- Autenticacao e autorizacao da API, que hoje nao existem.
+
+### Pre-requisitos para demonstrar em outra maquina
+
+O detector `opencv` baixa `haarcascade_frontalface_default.xml` e `haarcascade_eye.xml` de github.com
+para `~/.deepface/weights/` no primeiro uso, e o Facenet (cerca de 90 MB) vem na primeira
+requisicao. Rode o analytics uma vez com internet antes de apresentar.
 
 ## 9. Proximos passos identificados
 

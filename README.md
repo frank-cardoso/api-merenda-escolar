@@ -48,7 +48,7 @@ O código fica em `src/main/java/br/com/frankcardoso/merenda/`, um pacote por m�
 |---|---|
 | `aluno` | Cadastro de alunos (código público do QR Code, matrícula, ativo), transferência de turma e cadastro do rosto, guardando só o embedding. |
 | `analytics` | Portas e adapters HTTP para o serviço Python: indicadores logísticos, previsão de consumo e tendência por item. |
-| `biometria` | Porta de reconhecimento facial (gerar embedding e verificar 1:1) e adapter HTTP para o DeepFace do serviço Python. Não tem endpoint próprio. |
+| `biometria` | Porta de reconhecimento facial (gerar embedding e identificar 1:N), a regra que reúne os candidatos e decide, e o adapter HTTP para o DeepFace do serviço Python. Não tem endpoint próprio. |
 | `cardapio` | Cardápio por data e turno, com itens que referenciam receita por id; exclusão lógica; backfill de `receitaId` em cardápios antigos. |
 | `catalogo` | Receitas e ingredientes, carregados de `src/main/resources/dados/*.tsv`, e a listagem de receitas usada no cadastro de cardápio. |
 | `fila` | Validação síncrona do consumo, resolução do turno pelo relógio e auditoria de consumo (`auditoria_consumo`). |
@@ -78,13 +78,13 @@ Nem todo módulo tem as quatro: `catalogo` não tem `application` (o controller 
 `POST /api/v1/fila/validacoes` chama `ValidacaoConsumoService.validar`. Tudo acontece dentro da requisição. A fila nunca chama o LLM e só chama o serviço Python no modo facial.
 
 1. **Turno pelo relógio** (fuso `America/Sao_Paulo`): antes das 12h é `MANHA`, antes das 18h é `TARDE`, antes das 23h é `NOITE`; das 23h à meia-noite bloqueia com `FORA_DO_TURNO`. A fila nunca resolve `INTEGRAL`, que é modalidade do aluno e não faixa de horário.
-2. Numa transação, busca o aluno **ativo** pelo `alunoCodigo` (código público), com lock pessimista para evitar dupla autorização concorrente. Sem aluno: `ALUNO_NAO_ENCONTRADO_OU_INATIVO`.
-3. Se `metodoIdentificacao` é `FACIAL`, confere a foto contra o rosto cadastrado desse aluno (ver [Identificação facial](#identificação-facial)).
+2. Se `metodoIdentificacao` é `FACIAL`, identifica o aluno pela foto, **antes** da transação, para a chamada ao analytics não segurar conexão de banco (ver [Identificação facial](#identificação-facial)). Se não identifica, bloqueia com o motivo do facial.
+3. Numa transação, busca o aluno **ativo**, com lock pessimista para evitar dupla autorização concorrente: pelo `alunoCodigo` (código público) no QR Code, pelo aluno já identificado no facial. Sem aluno: `ALUNO_NAO_ENCONTRADO_OU_INATIVO`.
 4. Busca o cardápio ativo da data e do turno. Sem cardápio: `CARDAPIO_NAO_CONFIGURADO`.
 5. Se o aluno já teve consumo autorizado no mesmo dia e turno dentro da janela `merenda.fila.bloqueio-repeticao` (padrão `2m`), bloqueia com `CONSUMO_RECENTE_BLOQUEADO`. Depois da janela, o mesmo aluno pode validar de novo no turno atual.
 6. Autoriza e grava a linha em `auditoria_consumo` com a turma vigente carimbada (`turma_id`/`turma_nome`, ou `Sem turma`).
 
-A resposta de negócio é sempre HTTP 200: `resultado` `AUTORIZADO` com `sinal` `VERDE`, ou `BLOQUEADO` com `sinal` `VERMELHO` e `motivo`. Entrada inválida (por exemplo, sem `alunoCodigo`) volta como `ProblemDetail` 400. Só a autorização e o bloqueio por repetição são gravados em `auditoria_consumo`; os demais bloqueios voltam na resposta sem registro.
+A resposta de negócio é sempre HTTP 200: `resultado` `AUTORIZADO` com `sinal` `VERDE`, ou `BLOQUEADO` com `sinal` `VERMELHO` e `motivo`. Entrada inválida (por exemplo, `QR_CODE` sem `alunoCodigo`) volta como `ProblemDetail` 400. Só a autorização e o bloqueio por repetição são gravados em `auditoria_consumo`; os demais bloqueios, inclusive os do facial, voltam na resposta sem registro.
 
 ### Fluxo do relatório com IA (assíncrono)
 
@@ -201,9 +201,9 @@ A API sobe e a fila por QR Code funciona sem o analytics. Sem ele:
 
 - `GET /api/v1/gestao/indicadores` responde `status=INDISPONIVEL`, com indicadores nulos e aviso seguro;
 - o relatório com IA segue sem previsão e sem tendência (ver [Relatório logístico](#relatório-logístico));
-- o cadastro de rosto e a validação `FACIAL` na fila falham: não há fallback para o reconhecimento facial.
+- o cadastro de rosto responde 503 e a validação `FACIAL` na fila bloqueia com `RECONHECIMENTO_FACIAL_INDISPONIVEL`: não há fallback para o reconhecimento facial, e o QR Code segue funcionando.
 
-O primeiro pedido de reconhecimento facial depois de subir o analytics baixa os pesos do modelo (cerca de 90 MB); por isso o timeout do facial é maior que o dos outros adapters.
+O primeiro pedido de reconhecimento facial depois de subir o analytics baixa os pesos do modelo (cerca de 90 MB); por isso o timeout do facial é maior que o dos outros adapters. O detector `opencv` também baixa dois classificadores de github.com no primeiro uso (ver [Roteiro da demonstração facial](#roteiro-da-demonstração-facial)).
 
 ## Dados de demonstração
 
@@ -211,24 +211,27 @@ Na subida, fora do profile `test`, a API popula o banco para o dashboard ter nú
 
 | Ordem | Componente | O que cria | Quando |
 |---|---|---|---|
-| 1 | `DadosIniciaisConfig` (`CommandLineRunner`, `@Profile("!test")`) | Alunos `ALU-001` Ana Souza, `ALU-002` Bruno Lima e `ALU-003` Carla Santos. | Só com a tabela `aluno` vazia. |
-| 2 | `CatalogoLoader` | Receitas e ingredientes de `dados/itens-catalogo.tsv` e `dados/receitas-ingredientes.tsv`. | Tabelas vazias. |
-| 3 | `HistoricoFakeLoader` | Histórico sintético de `dados/historico-fake.tsv`, insumo do prompt. | Tabela vazia. |
-| 4 | `MedicaoSobraFakeLoader` | Medição sintética de `dados/medicao-sobra-fake.tsv`. | Tabela vazia. |
-| 5 | `CardapioReceitaBackfill` | `receitaId` dos itens de cardápios antigos, por nome exato. | Itens sem id. |
+| 0 | `DadosIniciaisConfig` (`CommandLineRunner`, `@Profile("!test")`) | Alunos `ALU-001` Ana Souza, `ALU-002` Bruno Lima e `ALU-003` Carla Santos. | Só com a tabela `aluno` vazia. |
+| 1 | `CatalogoLoader` | Receitas e ingredientes de `dados/itens-catalogo.tsv` e `dados/receitas-ingredientes.tsv`. | Tabelas vazias. |
+| 2 | `HistoricoFakeLoader` | Histórico sintético de `dados/historico-fake.tsv`, insumo do prompt. | Tabela vazia. |
+| 3 | `MedicaoSobraFakeLoader` | Medição sintética de `dados/medicao-sobra-fake.tsv`. | Tabela vazia. |
+| 4 | `CardapioReceitaBackfill` | `receitaId` dos itens de cardápios antigos, por nome exato. | Itens sem id. |
+| 5 | `RostosDemonstracaoLoader` (`@Profile("!test")`) | Alunos `ALU-9001` a `ALU-9005` com o rosto já cadastrado (abaixo). | Só o que falta. |
 | 6 | `DadosDemonstracaoLoader` (`@Profile("!test")`) | Alunos, turmas, enturmações, cardápios, consumos e medições (abaixo). | Só o que falta. |
 
-Os componentes 2 a 5 escutam `ApplicationReadyEvent` com `@Order(1)` a `@Order(4)` e não têm restrição de profile: rodam também nos testes com contexto Spring. Os arquivos `.tsv` ficam em `src/main/resources/dados/` e são gerados por `scripts/gerar_historico_fake.py`.
+O `DadosIniciaisConfig` roda antes de tudo, na subida do contexto. Os componentes 1 a 6 escutam `ApplicationReadyEvent`, com o `@Order` no método ouvinte (o Spring ignora `@Order` na classe para métodos `@EventListener`); `OrdemDosLoadersTest` guarda essa ordem. Só o 5 e o 6 têm restrição de profile: os demais rodam também nos testes com contexto Spring. Os arquivos `.tsv` ficam em `src/main/resources/dados/` e são gerados por `scripts/gerar_historico_fake.py`.
 
-O `DadosDemonstracaoLoader` (`shared/config`, `@Order(5)`) trabalha a partir da data de hoje no fuso `America/Sao_Paulo` e cria:
+O `DadosDemonstracaoLoader` (`shared/config`, `@Order(6)`) trabalha a partir da data de hoje no fuso `America/Sao_Paulo` e cria:
 
-- **Alunos** até completar `merenda.demo.alunos`, com nome `Aluno Demonstracao N` (com os três alunos iniciais e o padrão de 150, vão de `ALU-0004` a `ALU-0150`). Nenhum aluno nasce com rosto cadastrado; para testar o facial, cadastre um rosto (ver [Identificação facial](#identificação-facial)).
+- **Alunos** até completar `merenda.demo.alunos`, com nome `Aluno Demonstracao N`. Os alunos já existentes entram na conta; com os três iniciais, os cinco com rosto e o padrão de 150, vão de `ALU-0009` a `ALU-0150`. Esses alunos não têm rosto cadastrado.
 - **Turmas** `1A` a `9A` (turno `MANHA`, capacidade 30) e a **enturmação** de cada aluno sem vínculo, desde antes do primeiro dia do histórico. Um aluno é transferido para a turma seguinte no meio do intervalo, para a transferência ter o que mostrar.
-- **Cardápios** de demonstração (300 refeições planejadas, descrição `Cardapio de demonstracao`, itens do catálogo) para `MANHA`, `TARDE` e `INTEGRAL` em cada dia útil dos últimos `merenda.demo.dias` dias até hoje. `NOITE` ganha cardápio só para hoje e sem consumo, para a fila funcionar depois das 18h.
-- **Consumos** em `auditoria_consumo`: adesão em torno de 31% do planejado (cenário de desperdício alto, como no dado real), repetições mais frequentes nas turmas menores (1A a 3A), bloqueios em torno de 4% das autorizações e cerca de 1 em cada 10 registros marcado como `FACIAL`.
+- **Cardápios** de demonstração (300 refeições planejadas, descrição `Cardapio de demonstracao`, itens do catálogo) para `MANHA`, `TARDE` e `INTEGRAL` em cada dia útil dos últimos `merenda.demo.dias` dias até hoje. Hoje ganha cardápio em **todos** os turnos, inclusive `NOITE` e fim de semana, sem consumo além do que já passou, para a fila funcionar a qualquer hora da apresentação.
+- **Consumos** em `auditoria_consumo`, nunca com instante depois de agora e nunca para os alunos que têm rosto cadastrado (o consumo sintético em nome deles bloquearia a primeira leitura ao vivo por consumo recente): adesão em torno de 31% do planejado (cenário de desperdício alto, como no dado real), repetições mais frequentes nas turmas menores (1A a 3A), bloqueios em torno de 4% das autorizações e cerca de 1 em cada 10 registros marcado como `FACIAL`.
 - **Medições de sobra** sintéticas (origem `SINTETICO`) do cardápio principal do `INTEGRAL`, em cada dia útil.
 
-**Idempotência:** o loader só cria o que falta. Turmas são procuradas pelo código, a enturmação só é feita para quem não tem vínculo, o cardápio só é criado onde não há cardápio ativo no dia e turno, e a medição só onde ainda não existe. O consumo só é gerado para dia e turno sem nenhuma autorização registrada, o que preserva o que foi bipado pela tela da fila. Reiniciar não duplica dados; a cada subida o loader completa os dias que faltam até hoje. Cardápios de demonstração antigos, sem `receitaId`, são corrigidos.
+**Alunos com rosto (`RostosDemonstracaoLoader`).** Lê `src/main/resources/demo/rostos-demo.json` (propriedade `merenda.demo.rostos`, padrão `classpath:demo/rostos-demo.json`) e cria `ALU-9001` Helena Duarte, `ALU-9002` Lívia Campos, `ALU-9003` Rafael Moreira, `ALU-9004` Otávio Brandão e `ALU-9005` Lucas Ferreira, com o embedding já calculado. Os nomes são fictícios; os rostos vêm de adultos do dataset público LFW, e o JSON guarda só vetores, nenhuma imagem. É idempotente: não duplica, e só preenche o embedding de quem existe sem rosto. Semente ausente ou ilegível vira log, não falha a subida. O JSON é gerado por `analytics-merenda-escolar/scripts/gerar_rostos_demo.py`.
+
+**Idempotência:** o `DadosDemonstracaoLoader` só cria o que falta. Turmas são procuradas pelo código, a enturmação só é feita para quem não tem vínculo, o cardápio só é criado onde não há cardápio ativo no dia e turno, e a medição só onde ainda não existe. O consumo só é gerado para dia e turno sem nenhuma autorização registrada, o que preserva o que foi bipado pela tela da fila. Reiniciar não duplica dados; a cada subida o loader completa os dias que faltam até hoje. Cardápios de demonstração antigos, sem `receitaId`, são corrigidos.
 
 **Configuração:**
 
@@ -236,8 +239,9 @@ O `DadosDemonstracaoLoader` (`shared/config`, `@Order(5)`) trabalha a partir da 
 |---|---|---|
 | `merenda.demo.dias` | `60` | Dias de histórico gerados. `0` ou negativo desliga o `DadosDemonstracaoLoader` inteiro. |
 | `merenda.demo.alunos` | `150` | Quantidade total de alunos que o loader garante. |
+| `merenda.demo.rostos` | `classpath:demo/rostos-demo.json` | Semente dos alunos com rosto (`RostosDemonstracaoLoader`). |
 
-Nenhuma das duas está no `application.yml`; valem os padrões do código. Os três alunos de `DadosIniciaisConfig` não dependem delas.
+Nenhuma delas está no `application.yml`; valem os padrões do código. Os três alunos de `DadosIniciaisConfig` não dependem das duas primeiras, e `merenda.demo.dias` não desliga o `RostosDemonstracaoLoader`.
 
 ## Endpoints REST
 
@@ -250,12 +254,12 @@ Os endpoints de negócio ficam sob `/api/v1` e trocam JSON. Entrada inválida, r
 | `aluno` | `POST /api/v1/alunos` | Cria (201). `codigoPublico` é obrigatório; `turmaId` e `dataInicio`, informados juntos, abrem o primeiro vínculo. Código público ou matrícula repetidos: 409. |
 | `aluno` | `PUT /api/v1/alunos/{id}` | Atualiza `matricula`, `nome` e `ativo` (obrigatório). O código público não muda; a turma só muda por transferência. |
 | `aluno` | `POST /api/v1/alunos/{id}/transferencias` | `{"turmaId", "dataMudanca"}`: fecha o vínculo vigente no dia anterior e abre o novo. |
-| `aluno` | `POST /api/v1/alunos/{id}/rosto` | `{"fotoBase64"}`: gera o embedding no analytics e guarda só o vetor. Foto sem rosto ou com mais de um rosto: 400. |
+| `aluno` | `POST /api/v1/alunos/{id}/rosto` | `{"fotoBase64"}`: gera o embedding no analytics e guarda só o vetor. Foto sem rosto ou com mais de um rosto: 400. Rosto já cadastrado em outro aluno ativo: 409. Analytics fora do ar: 503. |
 | `turma` | `GET /api/v1/turmas` e `GET /api/v1/turmas/{id}` | Lista e detalhe. |
 | `turma` | `POST /api/v1/turmas` | Cria (201): `codigo`, `descricao`, `turno`, `quantidadeMaximaAlunos`. Código repetido: 409. |
 | `turma` | `PUT /api/v1/turmas/{id}` | Atualiza. |
 | `turma` | `DELETE /api/v1/turmas/{id}` | Exclui (204). Turma com enturmações, atuais ou históricas, ou com consumos: 409. |
-| `fila` | `POST /api/v1/fila/validacoes` | `{"alunoCodigo", "metodoIdentificacao", "fotoBase64"}`, com `metodoIdentificacao` `QR_CODE` ou `FACIAL`: autoriza ou bloqueia o consumo; bloqueio de negócio também volta 200. |
+| `fila` | `POST /api/v1/fila/validacoes` | `{"alunoCodigo", "metodoIdentificacao", "fotoBase64"}`, com `metodoIdentificacao` `QR_CODE` (exige `alunoCodigo`, senão 400) ou `FACIAL` (exige só `fotoBase64`; `alunoCodigo` é ignorado): autoriza ou bloqueia o consumo; bloqueio de negócio também volta 200. |
 | `cardapio` | `GET /api/v1/cardapios` | Cardápios ativos, do mais recente para o mais antigo. |
 | `cardapio` | `POST /api/v1/cardapios` | Cria (201): `data`, `turno`, `nomeRefeicao`, `descricao`, `itens` (`receitaId`, `nome`, `quantidade`) e `quantidadePlanejada`. Data passada ou receita desconhecida: 400; cardápio ativo já existente no dia e turno: 409. |
 | `cardapio` | `PUT /api/v1/cardapios/{id}` | Atualiza. |
@@ -275,21 +279,43 @@ Fora de `/api/v1`: `GET /actuator/health`, `GET /actuator/info`, `/swagger-ui.ht
 
 ### Identificação facial
 
-Hoje a identificação facial é **1:1**: o operador já sabe quem é o aluno, e a foto só confirma se o rosto bate com o cadastro dele. Não há busca entre alunos.
+A identificação facial é **1:N**: a foto descobre quem é o aluno, sem o operador digitar código. O QR Code continua sendo o caminho de reserva.
 
-**Cadastro do rosto.** `POST /api/v1/alunos/{id}/rosto` com `{"fotoBase64": "..."}`. A API envia a foto ao analytics (`POST /api/v1/reconhecimento-facial/embeddings`, modelo `Facenet`) e grava só o vetor devolvido, em `aluno.rosto_embedding_json` (migration `V13`). A foto nunca é gravada, nem na API nem no analytics. Um novo cadastro substitui o anterior, e a resposta traz `temRostoCadastrado: true`.
+**Cadastro do rosto.** `POST /api/v1/alunos/{id}/rosto` com `{"fotoBase64": "..."}`. A API envia a foto ao analytics (`POST /api/v1/reconhecimento-facial/embeddings`, modelo `Facenet`, exatamente um rosto) e grava só o vetor devolvido, em `aluno.rosto_embedding_json` (migration `V13`). A foto nunca é gravada, nem na API nem no analytics. Antes de gravar, a API compara o rosto novo com os já cadastrados: se ele já pertence a outro aluno ativo, responde 409 com "Este rosto já está cadastrado para o aluno <código> (<nome>)."; sem isso, dois cadastros do mesmo rosto tornariam o reconhecimento sempre ambíguo. Recadastrar o rosto do próprio aluno é permitido e substitui o anterior. Analytics fora do ar: 503.
 
-**Validação na fila.** `POST /api/v1/fila/validacoes` com `metodoIdentificacao` `FACIAL` exige `alunoCodigo` **e** `fotoBase64`:
+**Validação na fila.** `POST /api/v1/fila/validacoes` com `metodoIdentificacao` `FACIAL` precisa só da foto:
 
 ```json
-{ "alunoCodigo": "ALU-001", "metodoIdentificacao": "FACIAL", "fotoBase64": "..." }
+{ "metodoIdentificacao": "FACIAL", "fotoBase64": "..." }
 ```
 
-A API lê o embedding guardado daquele aluno e pede a comparação ao analytics (`POST /api/v1/reconhecimento-facial/verificacoes`), sem comparar com nenhum outro aluno. Os bloqueios próprios do facial são `FOTO_NAO_INFORMADA`, `ALUNO_SEM_ROSTO_CADASTRADO`, `ROSTO_NAO_CONFERE` e `ROSTO_NAO_DETECTADO`. Se o rosto confere, valem as mesmas regras do QR Code (cardápio do turno, repetição, carimbo de turma) e a auditoria registra o método `FACIAL`.
+A API carrega os alunos ativos com rosto e pede ao analytics a identificação 1:N (`POST /api/v1/reconhecimento-facial/identificacoes`), mandando a foto e os embeddings dos candidatos. O analytics escolhe o maior rosto da foto, compara com todos os candidatos e só devolve `RECONHECIDO` se a menor distância estiver abaixo do limiar (0.4, Facenet com cosseno) **e** o segundo colocado estiver pelo menos 0.08 mais longe; senão `AMBIGUO` ou `NAO_RECONHECIDO`. Candidato com embedding de outra dimensão é ignorado e contado (a API registra aviso no log). Reconhecido o aluno, valem as mesmas regras do QR Code (cardápio do turno, repetição, carimbo de turma) e a auditoria registra o método `FACIAL`.
 
-Com `QR_CODE`, basta o `alunoCodigo`; `fotoBase64` é ignorado.
+Os bloqueios próprios do facial, todos sem auditoria porque não há aluno a associar:
 
-A identificação 1:N, que descobre o aluno pela foto sem código, está em desenho (ver [Pendências](#pendências-e-próximos-passos)).
+| Motivo | Quando |
+|---|---|
+| `FOTO_NAO_INFORMADA` | Sem `fotoBase64`. |
+| `NENHUM_ROSTO_CADASTRADO` | Nenhum aluno ativo tem rosto. |
+| `ROSTO_NAO_RECONHECIDO` | Menor distância acima do limiar. |
+| `ROSTO_AMBIGUO` | Dois cadastros próximos demais para decidir. |
+| `ROSTO_NAO_DETECTADO` | A foto não tem rosto detectável. |
+| `RECONHECIMENTO_FACIAL_INDISPONIVEL` | Analytics fora do ar, erro 5xx ou resposta malformada. Nunca vira 500. |
+
+Com `QR_CODE`, `alunoCodigo` é obrigatório e `fotoBase64` é ignorado. O porquê das decisões, a calibração medida e o que faltaria para produção (LGPD incluída) estão em [DECISOES-TECNICAS.md](DECISOES-TECNICAS.md), seção 8.
+
+### Roteiro da demonstração facial
+
+Pré-requisito, uma vez por máquina, **com internet**: o detector `opencv` baixa `haarcascade_frontalface_default.xml` e `haarcascade_eye.xml` de github.com para `~/.deepface/weights/` no primeiro uso, e os pesos do Facenet (cerca de 90 MB) vêm na primeira requisição. Faça um primeiro reconhecimento antes de apresentar, para não esbarrar no timeout nem na rede.
+
+1. Suba os três serviços: analytics (8000), API (8081) e front (4200). Os cinco alunos de exemplo (`ALU-9001` a `ALU-9005`) já nascem com rosto cadastrado.
+2. Na fila, escolha o modo facial e use **Usar imagem** com `demo/rostos-teste/ALU-9001-teste.jpg`: o cartão fica verde com o nome de Helena Duarte. Repita com `ALU-9002` a `ALU-9005-teste.jpg`; cada imagem autoriza o aluno certo. As imagens de teste são diferentes das usadas no cadastro (origem e citação em `demo/rostos-teste/README.md`).
+3. Use `demo/rostos-teste/desconhecido.jpg`: a leitura é bloqueada com "Rosto não reconhecido" e a tela orienta o QR Code.
+4. Repita uma das imagens em menos de 2 minutos: bloqueio por consumo recente.
+5. Para ser reconhecido você mesmo: em **Alunos**, crie um aluno novo, abra o detalhe, **Cadastrar rosto** (câmera ou **Usar imagem**) e volte à fila no modo facial.
+6. Para voltar ao estado inicial, pare a API e apague `data/merenda*` (ver [Zerar o banco local](#zerar-o-banco-local)).
+
+A foto de teste mostrada à webcam também passa: não há prova de vida (ver limitações).
 
 ## Configuração da IA (fake, Gemini e Groq)
 
@@ -519,16 +545,16 @@ JAVA_HOME=/caminho/para/jdk-25 mvn -B test -Dtest=ValidacaoConsumoServiceTest
 
 - Os testes ficam em `src/test/java/br/com/frankcardoso/merenda/`, espelhando os pacotes de `main`.
 - Os testes com contexto Spring usam `@ActiveProfiles("test")` e `src/test/resources/application.yml`: H2 em memória (`jdbc:h2:mem:merenda-test`) e IA desligada (`spring.ai.model.chat: none`). Alguns sobrescrevem `spring.datasource.url` para ter um banco em memória próprio.
-- Com o profile `test`, `DadosIniciaisConfig` e `DadosDemonstracaoLoader` não rodam; os loaders de catálogo, histórico e medição sintética e o backfill de receitas rodam.
+- Com o profile `test`, `DadosIniciaisConfig`, `RostosDemonstracaoLoader` e `DadosDemonstracaoLoader` não rodam; os loaders de catálogo, histórico e medição sintética e o backfill de receitas rodam.
 - Não é preciso ter o analytics no ar nem chave de IA: os adapters Python são testados com `MockRestServiceServer`, e `ReconhecimentoFacialPort` é substituído por mock (`@MockitoBean`) onde o teste precisa.
 - Evite rodar `mvn test` no mesmo diretório enquanto `mvn spring-boot:run` está ativo: os dois escrevem em `target/` e podem atrapalhar um ao outro (já houve execução em que `target/classes` sumiu no meio da suíte).
 
 | Tipo | Como | Exemplos |
 |---|---|---|
-| Unitário | JUnit 5 com Mockito e AssertJ, sem Spring | `ValidacaoConsumoServiceTest`, `EnturmacaoServiceTest`, `CardapioServiceTest`, `RelatorioIAWorkerTest`, `EnturmacaoTest`, `MedicaoSobraTest`, `RelatorioIATest`, `ConclusaoDeterministicaTest`, `FakeAnaliseLogisticaAdapterTest` |
+| Unitário | JUnit 5 com Mockito e AssertJ, sem Spring | `ValidacaoConsumoServiceTest`, `IdentificacaoFacialServiceTest`, `ValidarConsumoRequestTest`, `OrdemDosLoadersTest`, `EnturmacaoServiceTest`, `CardapioServiceTest`, `RelatorioIAWorkerTest`, `EnturmacaoTest`, `MedicaoSobraTest`, `RelatorioIATest`, `ConclusaoDeterministicaTest`, `FakeAnaliseLogisticaAdapterTest` |
 | Adapter HTTP | `MockRestServiceServer` simula o analytics | `PythonIndicadoresLogisticosAdapterTest`, `PythonPrevisaoConsumoAdapterTest`, `PythonTendenciaItemAdapterTest`, `PythonReconhecimentoFacialAdapterTest` |
 | Integração | `@SpringBootTest` com H2 em memória | `MerendaEscolarApplicationTests`, `IndicadoresDadosServiceTest`, `RelatorioIndicadoresTest`, `CardapioReceitaBackfillTest`, `DadosDemonstracaoTurmasTest`, `VigenciaFilaIntegracaoTest` |
-| HTTP | `@SpringBootTest` com `@AutoConfigureMockMvc` | `CadastroHttpTest`: detalhe e transferência, cadastro de rosto (guarda só o embedding; foto sem rosto devolve 400), exclusão de turma em uso (409) |
+| HTTP | `@SpringBootTest` com `@AutoConfigureMockMvc` | `CadastroHttpTest`: detalhe e transferência, cadastro de rosto (guarda só o embedding; foto sem rosto devolve 400; rosto de outro aluno devolve 409; analytics fora do ar devolve 503), exclusão de turma em uso (409) |
 
 ## Scripts
 
@@ -548,7 +574,7 @@ JAVA_HOME=/caminho/para/jdk-25 mvn -B test -Dtest=ValidacaoConsumoServiceTest
 - Restaurar os scripts do Maven Wrapper: só `.mvn/wrapper/` está versionado, sem `mvnw` e
   `mvnw.cmd`. Podem ser regerados com `mvn wrapper:wrapper -Dmaven=3.9.16`. O comentário de
   `application-local.example.yml` ainda cita `.\mvnw.cmd`.
-- Identificação facial 1:N e rostos de demonstração, em desenho.
+- Restringir a busca facial à escola (depende de existir a entidade escola), prova de vida, recadastro periódico e piloto com crianças para calibrar limiar e margem; ver [DECISOES-TECNICAS.md](DECISOES-TECNICAS.md), seção 8.
 
 ## Limitações conhecidas
 
@@ -559,8 +585,11 @@ JAVA_HOME=/caminho/para/jdk-25 mvn -B test -Dtest=ValidacaoConsumoServiceTest
   falta é atribuí-las à turma real. Em banco novo, semeado pelo loader, não ocorre.
 - O H2 usa `AUTO_SERVER=TRUE`: uma segunda instância apontando para `./data/merenda` se conecta
   ao banco da primeira, em vez de abrir outro.
-- A identificação facial é 1:1 e depende do analytics no ar. Sem ele, o cadastro de rosto e a
-  validação `FACIAL` falham; o QR Code continua funcionando.
+- A identificação facial é 1:N e depende do analytics no ar. Sem ele, o cadastro de rosto responde 503
+  e a validação `FACIAL` bloqueia com `RECONHECIMENTO_FACIAL_INDISPONIVEL`; o QR Code continua funcionando.
+- Não há prova de vida: foto de foto passa. A merenda é supervisionada e isso é aceito; sem supervisão
+  não seria. A busca percorre todos os cadastrados, porque não existe entidade escola. A calibração
+  foi feita com adultos do LFW, não com crianças.
 - A fila não resolve `INTEGRAL` e bloqueia das 23h à meia-noite (`FORA_DO_TURNO`). Consumo `INTEGRAL`
   só existe nos dados de demonstração.
 - Não há autenticação nem autorização (o projeto não usa Spring Security): qualquer cliente que
@@ -570,8 +599,8 @@ JAVA_HOME=/caminho/para/jdk-25 mvn -B test -Dtest=ValidacaoConsumoServiceTest
 
 ## Para saber mais
 
-- [DECISOES-TECNICAS.md](DECISOES-TECNICAS.md): o porquê das decisões (resiliência e fallback de IA, cadastro de cardápio, quem decide o número e quem redige, medição de sobra, identidade de item por id). A seção 8, "Identificação fica no QR Code", é anterior ao reconhecimento facial e está desatualizada.
-- [implementation_plan.md](implementation_plan.md): plano original, contratos REST e critérios de aceite. A seção "Identificação" também é anterior ao reconhecimento facial e está desatualizada.
+- [DECISOES-TECNICAS.md](DECISOES-TECNICAS.md): o porquê das decisões (resiliência e fallback de IA, cadastro de cardápio, quem decide o número e quem redige, medição de sobra, identidade de item por id). A seção 8, "Identificação facial 1:N, supervisionada, no servidor", traz a correção sobre o `betha-bio-sdk`, a calibração do facial e o que faltaria para produção.
+- [implementation_plan.md](implementation_plan.md): plano original, contratos REST e critérios de aceite. A seção "Identificação" e as fases refletem o facial 1:N.
 - [RETROSPECTIVA.md](RETROSPECTIVA.md): erros encontrados e corrigidos, acertos e dúvidas em aberto.
 - [docs/superpowers/BACKLOG.md](docs/superpowers/BACKLOG.md): próximas features levantadas.
 - [docs/superpowers/specs/](docs/superpowers/specs/): desenhos do fechamento de turno e de turma e aluno.
