@@ -9,6 +9,7 @@ import br.com.frankcardoso.merenda.cardapio.application.CardapioNaoEncontradoPor
 import br.com.frankcardoso.merenda.cardapio.application.ReceitaDesconhecidaException;
 import br.com.frankcardoso.merenda.gestao.application.CardapioNaoEncontradoException;
 import br.com.frankcardoso.merenda.medicao.domain.MedicaoSobraInconsistenteException;
+import br.com.frankcardoso.merenda.relatorio.application.AmostraInsuficienteParaAnaliseException;
 import br.com.frankcardoso.merenda.relatorio.application.RelatorioNaoEncontradoException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -45,6 +46,11 @@ public class RestExceptionHandler {
         RostoNaoDetectadoException.class, MultiplosRostosDetectadosException.class})
     ProblemDetail tratarEntradaInvalida(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.BAD_REQUEST, "Requisicao invalida", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(AmostraInsuficienteParaAnaliseException.class)
+    ProblemDetail tratarAmostraInsuficiente(AmostraInsuficienteParaAnaliseException exception, HttpServletRequest request) {
+        return problema(HttpStatus.UNPROCESSABLE_ENTITY, "Amostra insuficiente", exception.getMessage(), request);
     }
 
     @ExceptionHandler(ReconhecimentoFacialIndisponivelException.class)

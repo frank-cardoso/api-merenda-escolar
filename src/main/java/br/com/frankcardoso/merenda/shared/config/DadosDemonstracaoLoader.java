@@ -175,7 +175,7 @@ public class DadosDemonstracaoLoader {
             }
         }
 
-        garantirMedicoesCardapioPrincipal(hoje, rng, agora);
+        garantirMedicoes(hoje, rng, agora);
 
         // Hoje ganha cardapio em todos os turnos, inclusive fim de semana e NOITE (que nao
         // existe em producao): o TurnoResolver da fila resolve o turno pelo horario, e sem
@@ -332,28 +332,35 @@ public class DadosDemonstracaoLoader {
         return ids;
     }
 
-    private void garantirMedicoesCardapioPrincipal(LocalDate hoje, Random rng, Instant registradoEm) {
+    private void garantirMedicoes(LocalDate hoje, Random rng, Instant registradoEm) {
         for (int voltar = diasDeHistorico; voltar >= 0; voltar--) {
             var dia = hoje.minusDays(voltar);
             if (!DIAS_UTEIS.contains(dia.getDayOfWeek())) continue;
-            var cardapio = cardapios.findByDataAndTurnoAndAtivoTrue(dia, Turno.INTEGRAL).orElse(null);
-            if (cardapio == null || !"Cardapio de demonstracao".equals(cardapio.getDescricao())) continue;
-            try {
-                var receitas = ids(cardapio.getItensJson());
-                for (var receitaId : receitas) {
-                    if (medicoes.findByDataAndTurnoAndEscolaIdAndReceitaId(
-                        dia, Turno.INTEGRAL, 1, receitaId).isPresent()) continue;
-                    int preparadas = 100;
-                    int servidas = 78 + rng.nextInt(15);
-                    int resto = Math.min(servidas, 5 + rng.nextInt(12));
-                    medicoes.save(new MedicaoSobra(UUID.randomUUID(), dia, Turno.INTEGRAL, 1,
-                        receitaId, preparadas, servidas, preparadas - servidas, resto,
-                        "SINTETICO", registradoEm));
-                }
-            } catch (Exception exception) {
-                LOG.warn("Não foi possível gerar medições do cardápio principal em {}: {}",
-                    dia, exception.getMessage());
+            for (Turno turno : TURNOS_COM_MOVIMENTO) {
+                // O fechamento de hoje nos turnos de manhã e tarde fica para quem opera a tela.
+                if (turno != Turno.INTEGRAL && dia.equals(hoje)) continue;
+                garantirMedicoes(dia, turno, rng, registradoEm);
             }
+        }
+    }
+
+    private void garantirMedicoes(LocalDate dia, Turno turno, Random rng, Instant registradoEm) {
+        var cardapio = cardapios.findByDataAndTurnoAndAtivoTrue(dia, turno).orElse(null);
+        if (cardapio == null || !"Cardapio de demonstracao".equals(cardapio.getDescricao())) return;
+        try {
+            for (var receitaId : ids(cardapio.getItensJson())) {
+                if (medicoes.findByDataAndTurnoAndEscolaIdAndReceitaId(
+                    dia, turno, 1, receitaId).isPresent()) continue;
+                int preparadas = 100;
+                int servidas = 78 + rng.nextInt(15);
+                int resto = Math.min(servidas, 5 + rng.nextInt(12));
+                medicoes.save(new MedicaoSobra(UUID.randomUUID(), dia, turno, 1,
+                    receitaId, preparadas, servidas, preparadas - servidas, resto,
+                    "SINTETICO", registradoEm));
+            }
+        } catch (Exception exception) {
+            LOG.warn("Não foi possível gerar medições do cardápio em {} ({}): {}",
+                dia, turno, exception.getMessage());
         }
     }
 

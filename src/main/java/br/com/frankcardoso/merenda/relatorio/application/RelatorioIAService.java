@@ -2,6 +2,7 @@ package br.com.frankcardoso.merenda.relatorio.application;
 
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaOutput;
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticos;
+import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaRepository;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.relatorio.api.RelatorioResumoResponse;
 import br.com.frankcardoso.merenda.relatorio.api.CriarRelatorioIARequest;
@@ -29,14 +30,17 @@ public class RelatorioIAService {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final MedicaoSobraRepository medicoes;
+    private final ReceitaRepository receitas;
 
     public RelatorioIAService(RelatorioIARepository repository, RelatorioIAWorker worker,
-                              ObjectMapper objectMapper, Clock clock, MedicaoSobraRepository medicoes) {
+                              ObjectMapper objectMapper, Clock clock, MedicaoSobraRepository medicoes,
+                              ReceitaRepository receitas) {
         this.repository = repository;
         this.worker = worker;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.medicoes = medicoes;
+        this.receitas = receitas;
     }
 
     public CriarRelatorioIAResponse criar(CriarRelatorioIARequest request) {
@@ -64,9 +68,11 @@ public class RelatorioIAService {
                 : medicoes.datasComFechamentoCompleto(request.datasSelecionadas(), request.turno(),
                     request.receitaIds(), request.receitaIds().size()).size();
         if (fechamentos < MINIMO_FECHAMENTOS_IA) {
-            throw new IllegalArgumentException(
-                "A análise IA exige pelo menos %d dias com fechamento no período"
-                    .formatted(MINIMO_FECHAMENTOS_IA));
+            var periodo = request.datasSelecionadas().isEmpty()
+                ? "nos últimos 30 dias" : "entre as datas selecionadas";
+            throw new AmostraInsuficienteParaAnaliseException(
+                "O relatório de IA precisa de pelo menos %d dias com fechamento %s deste turno; há %d."
+                    .formatted(MINIMO_FECHAMENTOS_IA, periodo, fechamentos));
         }
         for (var receitaId : request.receitaIds()) {
             var diasDoItem = request.datasSelecionadas().isEmpty()
@@ -74,9 +80,11 @@ public class RelatorioIAService {
                 : medicoes.countDiasPorReceitaNasDatas(request.datasSelecionadas(), request.turno(), receitaId);
             if (diasDoItem
                 < MINIMO_FECHAMENTOS_ITEM_IA) {
-                throw new IllegalArgumentException(
-                    "A receita %s exige pelo menos %d dias com fechamento"
-                        .formatted(receitaId, MINIMO_FECHAMENTOS_ITEM_IA));
+                var nome = receitas.findById(receitaId).map(receita -> receita.getNome())
+                    .orElse(receitaId.toString());
+                throw new AmostraInsuficienteParaAnaliseException(
+                    "A receita %s precisa de pelo menos %d dias com fechamento; há %d."
+                        .formatted(nome, MINIMO_FECHAMENTOS_ITEM_IA, diasDoItem));
             }
         }
     }

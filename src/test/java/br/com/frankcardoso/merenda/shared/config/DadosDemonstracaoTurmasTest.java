@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class DadosDemonstracaoTurmasTest {
 
-    private static final int DIAS = 20;
+    private static final int DIAS = 30;
     private static final int ALUNOS = 18;
     private static final LocalDate HOJE = LocalDate.of(2030, 3, 13);
     private static final LocalDate PRIMEIRO_DIA = HOJE.minusDays(DIAS);
@@ -190,6 +190,24 @@ class DadosDemonstracaoTurmasTest {
     void cardapioDeHojeExisteEmTodosOsTurnos() {
         for (var turno : br.com.frankcardoso.merenda.fila.domain.Turno.values()) {
             assertThat(cardapios.findByDataAndTurnoAndAtivoTrue(HOJE, turno)).as(turno.name()).isPresent();
+        }
+    }
+
+    @Test
+    void manhaTardeEIntegralTemVinteDiasDeFechamentoNosUltimosTrintaDias() {
+        for (var turno : java.util.List.of(br.com.frankcardoso.merenda.fila.domain.Turno.MANHA,
+            br.com.frankcardoso.merenda.fila.domain.Turno.TARDE,
+            br.com.frankcardoso.merenda.fila.domain.Turno.INTEGRAL)) {
+            assertThat(medicoes.countFechamentos(HOJE.minusDays(29), HOJE, turno))
+                .as(turno.name()).isGreaterThanOrEqualTo(20);
+        }
+    }
+
+    @Test
+    void fechamentoDeHojeNaoEPreGeradoParaManhaETarde() {
+        for (var turno : java.util.List.of(br.com.frankcardoso.merenda.fila.domain.Turno.MANHA,
+            br.com.frankcardoso.merenda.fila.domain.Turno.TARDE)) {
+            assertThat(medicoes.countFechamentos(HOJE, HOJE, turno)).as(turno.name()).isZero();
         }
     }
 
