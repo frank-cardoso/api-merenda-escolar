@@ -6,7 +6,6 @@ import java.net.URI;
 import java.util.UUID;
 import java.time.LocalDate;
 import java.util.List;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.http.ResponseEntity;
@@ -43,7 +42,7 @@ public class RelatorioIAController {
     @GetMapping
     List<RelatorioResumoResponse> listar(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
-        @RequestParam Turno turno) {
-        return service.listar(data, turno);
+        @RequestParam UUID tipoRefeicaoId) {
+        return service.listar(data, tipoRefeicaoId);
     }
 }

@@ -79,7 +79,7 @@ No sistema legado (Betha Merenda), `CARDAPIOS` e um **periodo de validade**
 consumo. A composicao vem de `REFEICOES` → `RECEITAS` → `INGREDIENTES` (tres tabelas
 encadeadas), e a tela de cadastro e uma matriz semanal (dia da semana x refeicao x receitas).
 
-Aqui o modelo e deliberadamente mais enxuto: **um cardapio = uma data + um turno**, com os itens
+Aqui o modelo e deliberadamente mais enxuto: **um cardapio = uma data + um turno** (hoje, uma data + uma refeicao; ver secao 9), com os itens
 em `itens_json`. Isso colapsa cinco tabelas do legado em uma. A contrapartida e que nao existe
 cardapio "modelo semanal" — para uma semana inteira e preciso cadastrar dia a dia. Aceitavel no
 escopo de prototipo, mas e o primeiro ponto a revisitar se o sistema crescer.
@@ -96,11 +96,11 @@ Vale notar que `relatorio_ia` **nao** tem FK para cardapio: ele guarda um snapsh
 
 ### Constraint unica removida (V3)
 
-O ideal seria um indice unico parcial (`UNIQUE(data, turno) WHERE ativo = TRUE`), permitindo
+O ideal seria um indice unico parcial (`UNIQUE(data, turno) WHERE ativo = TRUE`; hoje, por refeicao), permitindo
 varias linhas historicas inativas e apenas uma ativa. **O H2 nao suporta essa sintaxe.**
 
 Solucao adotada: remover a constraint do banco e garantir a regra no `CardapioService` via
-`existsByDataAndTurnoAndAtivoTrue`. Perde-se a garantia em nivel de banco — aceitavel em um
+`existsByDataAndTurnoAndAtivoTrue` (hoje, a mesma regra por data e refeicao). Perde-se a garantia em nivel de banco — aceitavel em um
 prototipo mono-usuario, mas seria preciso rever ao migrar para PostgreSQL (onde o indice parcial
 funciona e deveria ser recriado).
 
@@ -457,10 +457,131 @@ O detector `opencv` baixa `haarcascade_frontalface_default.xml` e `haarcascade_e
 para `~/.deepface/weights/` no primeiro uso, e o Facenet (cerca de 90 MB) vem na primeira
 requisicao. Rode o analytics uma vez com internet antes de apresentar.
 
-## 9. Proximos passos identificados
+## 9. Refeicao como unidade da fila e da analise
+
+Antes, o turno fazia papel de refeicao: um cardapio por (data, turno), um fechamento por (data,
+turno, item) e uma leitura na fila que nao sabia qual refeicao era. Isso nao descreve a escola
+real: uma turma parcial recebe uma ou duas refeicoes, uma integral recebe tres ou mais, e a taxa de
+execucao muda muito de uma refeicao para outra (de 20% a 41% no historico do legado). Agora a
+**refeicao** e a unidade do cardapio, da fila, do fechamento e da analise.
+
+### O regime vem do turno da turma
+
+Nao entrou campo novo na turma. O turno que ela ja tinha diz o regime: `INTEGRAL` e turma de tempo
+integral; `MANHA`, `TARDE` e `NOITE` sao turmas parciais daquele periodo. O aluno herda o regime
+pela enturmacao vigente na data. O turno saiu de cardapio, auditoria, medicao e historico (V16) e
+so continua em `turma` e, para leitura, em `relatorio_ia`.
+
+### A grade de refeicoes
+
+`TipoRefeicao` (tabela `tipo_refeicao`, com os turnos com direito em `tipo_refeicao_turno`) tem
+nome, ordem, janela de horario e turnos. A V14 semeia, com ids fixos:
+
+| Refeicao | Janela | Turnos com direito |
+|---|---|---|
+| Cafe da manha | 07:00 a 08:00 | INTEGRAL |
+| Lanche da manha | 09:30 a 10:30 | MANHA, INTEGRAL |
+| Almoco | 11:30 a 13:00 | INTEGRAL |
+| Lanche da tarde | 15:00 a 16:00 | TARDE, INTEGRAL |
+| Lanche da noite | 20:00 a 21:00 | NOITE |
+
+A janela e **`[inicio, fim)`**: as 08:00 em ponto ja nao sao Cafe da manha. Assim duas refeicoes
+encostadas nao disputam o mesmo instante. A regra de consistencia, validada ao montar a grade
+(`GradeRefeicoes.de`) e coberta por teste: para um mesmo turno de turma as janelas nao se
+sobrepoem, entao dado o horario e o turno existe no maximo uma refeicao. Janelas sobrepostas so
+sao aceitas se nao dividirem turno.
+
+Grade vazia ou inconsistente nao vira erro 500 nem nega refeicao por acaso: a fila bloqueia com
+`GRADE_DE_REFEICOES_INVALIDA`, registra aviso no log e orienta a corrigir a configuracao. A grade
+vem pronta por migration e e a mesma para a escola unica do prototipo; nao ha tela de cadastro
+nem escrita (`GET /api/v1/tipos-refeicao` so le).
+
+### Fila: refeicao pelo horario, sem escolha da merendeira
+
+Depois de identificar o aluno (QR ou facial, sem mudanca), a grade (`GradeRefeicoes.resolver`) pega a refeicao
+cuja janela contem o horario e que da direito ao turno da turma vigente:
+
+- nenhuma refeicao no horario: `FORA_DO_HORARIO_DE_REFEICAO` (checado antes de identificar, para
+  nao chamar o reconhecimento facial a toa);
+- ha refeicao no horario, mas nao para a turma: `REFEICAO_NAO_PREVISTA_PARA_TURMA`;
+- aluno sem turma vigente: vale a refeicao da janela, a de menor `ordem` se houver mais de uma,
+  no mesmo espirito de antes, que autorizava sem enturmacao e carimbava "Sem turma";
+- cardapio da (data, refeicao) ausente: `CARDAPIO_NAO_CONFIGURADO`, como antes.
+
+**Repeticao continua permitida.** O bloqueio de `merenda.fila.bloqueio-repeticao` (2 minutos) agora
+conta dentro da mesma refeicao. Depois da janela o aluno repete, e a repeticao fica registrada e
+entra na analise. O que a mudanca evita e o erro oposto: bloquear o aluno integral no almoco porque
+ele ja comeu no cafe. A auditoria grava o id e o nome da refeicao carimbados, como ja fazia com a
+turma, para renomear ou remover uma refeicao nao reescrever o passado.
+
+### Relogio de demonstracao com deslocamento
+
+A grade deixa vaos (antes das 07:00, 08:00 a 09:30, 10:30 a 11:30, 13:00 a 15:00,
+16:00 a 20:00 e depois das 21:00) e, fora das janelas, a fila
+bloqueia. Para a apresentacao nao depender da hora real, a propriedade opcional
+`merenda.demo.horario` (`HH:mm`) troca o `Clock` da aplicacao (`shared/config`) por um relogio com
+**deslocamento**: comeca hoje naquele horario e segue andando junto com o real. Nao e um relogio
+congelado, porque a janela de 2 minutos da repeticao precisa continuar passando durante a
+demonstracao. Sem a propriedade vale o relogio real; valor invalido impede a subida, em vez de a
+demonstracao rodar silenciosamente na hora errada.
+
+### Analise e contrato com o Python
+
+O relatorio de IA e o Dashboard sao pedidos por (data de referencia, refeicao). A amostra minima
+(20 dias com fechamento nos ultimos 30) conta dias da refeicao. O contrato Java para Python troca
+`turno` por `refeicao` (`id` e `nome`), traz `historicoSemRefeicao` e sobe para `schemaVersion=5`
+na resposta; a previsao de consumo tambem passa a receber `refeicao`. Relatorios antigos
+continuam abrindo com o `turno` antigo.
+
+### Mapeamento do legado
+
+A base local de demonstracao e recriada, entao a demonstracao nao depende de conversao. As
+migrations so deixam valido o banco de quem ja tinha dados (rede de seguranca):
+
+- cardapios, consumos, fechamentos e relatorios antigos recebem a refeicao pelo turno: MANHA vira
+  Lanche da manha, TARDE Lanche da tarde, NOITE Lanche da noite e INTEGRAL Almoco;
+- o historico sintetico do legado (`historico_consumo.refeicao`, texto) e mapeado pelo prefixo do
+  nome para Cafe da manha, Lanche da manha, Almoco ou Lanche da tarde; o que nao tem
+  correspondencia clara (frutas, turno estendido, "manha e tarde") fica sem refeicao e fora da
+  analise por refeicao, e o relatorio avisa quantos registros ficaram de fora;
+- em bases antigas, o Almoco mapeado do INTEGRAL nao tem consumo (a fila antiga nunca resolveu
+  INTEGRAL), entao a analise dele considera so os dias com consumo.
+
+A V15 acrescenta as colunas de refeicao (expand) e preenche as linhas antigas; a V16 remove o
+turno (contract). Separadas para cada etapa deixar a suite verde.
+
+### O que ficou fora
+
+- Grade de refeicoes diferente por escola (o prototipo tem uma escola so) e tela para cadastrar a
+  grade.
+- Calculo nutricional, per capita do PNAE e contraturno com turma de outro periodo.
+- Mudar a identificacao: QR e facial seguem como estavam; so o que acontece depois de identificar
+  mudou.
+- Dados antigos de turma e de consumo da demonstracao: nao houve migracao, o banco local e
+  recriado e o rosto cadastrado a mao precisa ser cadastrado de novo, de preferencia num aluno de
+  turma integral.
+
+### Painel do dia no fechamento
+
+`GET /api/v1/fechamentos/dia?data=` devolve, para cada refeicao da grade, uma situacao calculada
+na hora (nada e gravado): `SEM_CARDAPIO`, `FECHADA`, `AGUARDANDO`, `EM_ANDAMENTO` ou `PENDENTE`,
+nessa precedencia. A hora vem do `Clock` no fuso `America/Sao_Paulo`, com janela `[inicio, fim)`.
+
+- Fechamento parcial nao fecha: so e `FECHADA` quando toda receita do cardapio ativo tem medicao
+  (data, refeicao, escola 1). Uma medicao solta nao some da pendencia.
+- Fechar fora da janela continua permitido; a situacao orienta, nao bloqueia.
+- A demonstracao deixou de pre-gerar o fechamento de hoje do Almoco: nenhuma refeicao de hoje vem
+  fechada, entao o painel tem o que mostrar em qualquer horario.
+- `GET /api/v1/fechamentos/pendencias?ate=&dias=` lista as refeicoes com cardapio, janela ja
+  encerrada e sem fechamento completo, inclusive as de hoje (`dias` de 1 a 31, padrao 7).
+
+## 10. Proximos passos identificados
 
 ### Resolvidos desde a primeira versao deste documento
 
+- **`INTEGRAL` nao acumulava consumo pela fila.** O `TurnoResolver` resolvia so pelo relogio e nunca
+  devolvia INTEGRAL. Resolvida na secao 9: a fila resolve a refeicao pelo horario e pelo turno da
+  turma, e a turma integral passa em varias refeicoes.
 - **Historico no payload da IA.** `RelatorioIAWorker.consumosDosDiasAnteriores` envia a serie do
   mesmo turno. Era o `List.of()` hardcoded do item 11 da RETROSPECTIVA.
 - **Itens do cardapio no payload.** `itensDoCardapio` e `itensDoCardapioComTendencia` levam a taxa
@@ -478,9 +599,6 @@ requisicao. Rode o analytics uma vez com internet antes de apresentar.
   falta a regra que decide quando a queda sustenta uma recomendacao de ciclo.
 - **Motivo dos bloqueios agregado.** `tentativasBloqueadas` sozinho diz pouco: "sem matricula" e
   "ja consumiu hoje" sao situacoes opostas e hoje viram o mesmo numero.
-- **`INTEGRAL` nao acumula consumo pela fila.** O `TurnoResolver` resolve pelo relogio da catraca
-  e nunca devolve INTEGRAL, entao um cardapio INTEGRAL nao gera historico pelo fluxo real —
-  justamente o turno mais usado em producao.
 - **Cores dos cards do painel sao estaticas.** `Aceitacao` sempre verde e `Risco desperdicio`
   sempre ambar, independente do valor. Aceitacao BAIXA vai aparecer em verde.
 - **Cadastro de cardapio ainda e campo de texto.** `GET /api/v1/receitas` existe, o front nao usa.

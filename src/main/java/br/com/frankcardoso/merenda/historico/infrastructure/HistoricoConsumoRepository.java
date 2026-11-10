@@ -1,6 +1,5 @@
 package br.com.frankcardoso.merenda.historico.infrastructure;
 
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.historico.domain.HistoricoConsumo;
 import java.time.LocalDate;
 import java.util.List;
@@ -23,12 +22,14 @@ public interface HistoricoConsumoRepository extends JpaRepository<HistoricoConsu
         SELECT h.receitaId AS receitaId, r.nome AS item, h.origem AS origem, h.escolaId AS escola,
                COUNT(h) AS planejamentos, COUNT(h.quantidadeServida) AS execucoes
         FROM HistoricoConsumo h JOIN Receita r ON r.id = h.receitaId
-        WHERE h.turno = :turno AND h.data >= :inicio AND h.data <= :fim
+        WHERE h.tipoRefeicaoId = :tipoRefeicaoId AND h.data >= :inicio AND h.data <= :fim
         GROUP BY h.receitaId, r.nome, h.origem, h.escolaId
         ORDER BY r.nome, h.origem, h.escolaId
         """)
     List<ExecucaoItem> execucoesNaJanela(@Param("inicio") LocalDate inicio,
-        @Param("fim") LocalDate fim, @Param("turno") Turno turno);
+        @Param("fim") LocalDate fim, @Param("tipoRefeicaoId") UUID tipoRefeicaoId);
+
+    long countByTipoRefeicaoIdIsNullAndDataBetween(LocalDate inicio, LocalDate fim);
 
     interface ExecucaoItem {
         UUID getReceitaId();
@@ -48,14 +49,14 @@ public interface HistoricoConsumoRepository extends JpaRepository<HistoricoConsu
                COUNT(h)                      AS vezesPlanejado,
                COUNT(h.quantidadeServida)    AS vezesServido
         FROM HistoricoConsumo h JOIN Receita r ON r.id = h.receitaId
-        WHERE h.turno = :turno
+        WHERE h.tipoRefeicaoId = :tipoRefeicaoId
           AND h.data >= :desde
           AND h.data < :ate
         GROUP BY h.receitaId, r.nome
         HAVING COUNT(h) >= :minimoOcorrencias
         ORDER BY (1.0 * COUNT(h.quantidadeServida) / COUNT(h)) ASC
         """)
-    List<ItemAgregado> taxaPorItem(@Param("turno") Turno turno,
+    List<ItemAgregado> taxaPorItem(@Param("tipoRefeicaoId") UUID tipoRefeicaoId,
                                    @Param("desde") LocalDate desde,
                                    @Param("ate") LocalDate ate,
                                    @Param("minimoOcorrencias") long minimoOcorrencias,
@@ -68,13 +69,13 @@ public interface HistoricoConsumoRepository extends JpaRepository<HistoricoConsu
                COUNT(h)                      AS vezesPlanejado,
                COUNT(h.quantidadeServida)    AS vezesServido
         FROM HistoricoConsumo h JOIN Receita r ON r.id = h.receitaId
-        WHERE h.turno = :turno
+        WHERE h.tipoRefeicaoId = :tipoRefeicaoId
           AND h.data < :ate
           AND h.receitaId IN :receitas
         GROUP BY h.receitaId, r.nome
         ORDER BY (1.0 * COUNT(h.quantidadeServida) / COUNT(h)) ASC
         """)
-    List<ItemAgregado> taxaPorReceitas(@Param("turno") Turno turno,
+    List<ItemAgregado> taxaPorReceitas(@Param("tipoRefeicaoId") UUID tipoRefeicaoId,
                                        @Param("ate") LocalDate ate,
                                        @Param("receitas") List<UUID> receitas);
 
@@ -89,13 +90,13 @@ public interface HistoricoConsumoRepository extends JpaRepository<HistoricoConsu
                SUM(h.quantidadePlanejada)         AS planejado,
                COALESCE(SUM(h.quantidadeServida), 0) AS servido
         FROM HistoricoConsumo h JOIN Receita r ON r.id = h.receitaId
-        WHERE h.turno = :turno
+        WHERE h.tipoRefeicaoId = :tipoRefeicaoId
           AND h.data < :ate
           AND h.receitaId IN :receitas
         GROUP BY h.receitaId, r.nome, h.data
         ORDER BY h.receitaId ASC, h.data ASC
         """)
-    List<ItemDiaAgregado> serieDiariaPorReceita(@Param("turno") Turno turno,
+    List<ItemDiaAgregado> serieDiariaPorReceita(@Param("tipoRefeicaoId") UUID tipoRefeicaoId,
                                                 @Param("ate") LocalDate ate,
                                                 @Param("receitas") List<UUID> receitas);
 

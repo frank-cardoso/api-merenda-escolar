@@ -13,10 +13,13 @@ import br.com.frankcardoso.merenda.fila.api.ValidarConsumoResponse;
 import br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo;
 import br.com.frankcardoso.merenda.fila.domain.MetodoIdentificacao;
 import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
-import br.com.frankcardoso.merenda.turma.infrastructure.EnturmacaoRepository;
+import br.com.frankcardoso.merenda.refeicao.domain.GradeRefeicoes;
+import br.com.frankcardoso.merenda.refeicao.domain.ResolucaoRefeicao;
+import br.com.frankcardoso.merenda.refeicao.domain.TipoRefeicao;
 import br.com.frankcardoso.merenda.shared.config.ApplicationConfig;
+import br.com.frankcardoso.merenda.turma.domain.Turma;
+import br.com.frankcardoso.merenda.turma.infrastructure.EnturmacaoRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -35,13 +38,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ValidacaoConsumoService {
 
     private static final Logger LOG = LoggerFactory.getLogger(ValidacaoConsumoService.class);
+    private static final String GRADE_INVALIDA = "GRADE_DE_REFEICOES_INVALIDA";
     private static final ZoneId ZONA_OPERACIONAL = ApplicationConfig.ZONA_OPERACIONAL;
 
     private final AlunoRepository alunoRepository;
     private final CardapioRepository cardapioRepository;
     private final AuditoriaConsumoRepository auditoriaRepository;
     private final EnturmacaoRepository enturmacaoRepository;
-    private final TurnoResolver turnoResolver;
+    private final RefeicaoResolver refeicaoResolver;
     private final IdentificacaoFacialService identificacaoFacial;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
@@ -49,7 +53,7 @@ public class ValidacaoConsumoService {
 
     public ValidacaoConsumoService(AlunoRepository alunoRepository, CardapioRepository cardapioRepository,
                                     AuditoriaConsumoRepository auditoriaRepository,
-                                    EnturmacaoRepository enturmacaoRepository, TurnoResolver turnoResolver,
+                                    EnturmacaoRepository enturmacaoRepository, RefeicaoResolver refeicaoResolver,
                                     IdentificacaoFacialService identificacaoFacial,
                                     TransactionTemplate transactionTemplate, Clock clock,
                                     @Value("${merenda.fila.bloqueio-repeticao:2m}")
@@ -58,7 +62,7 @@ public class ValidacaoConsumoService {
         this.cardapioRepository = cardapioRepository;
         this.auditoriaRepository = auditoriaRepository;
         this.enturmacaoRepository = enturmacaoRepository;
-        this.turnoResolver = turnoResolver;
+        this.refeicaoResolver = refeicaoResolver;
         this.identificacaoFacial = identificacaoFacial;
         this.transactionTemplate = transactionTemplate;
         this.clock = clock;
@@ -68,18 +72,18 @@ public class ValidacaoConsumoService {
     public ValidarConsumoResponse validar(ValidarConsumoRequest request) {
         var agora = Instant.now(clock);
         var horarioLocal = agora.atZone(ZONA_OPERACIONAL);
-        Turno turno;
-        try {
-            turno = turnoResolver.resolver(LocalTime.from(horarioLocal));
-        } catch (IllegalStateException exception) {
-            return ValidarConsumoResponse.bloqueado(exception.getMessage(), null);
-        }
+        LocalTime horario = LocalTime.from(horarioLocal);
+        var gradeCarregada = refeicaoResolver.carregarGrade();
+        if (gradeCarregada.isEmpty()) return ValidarConsumoResponse.bloqueado(GRADE_INVALIDA);
+        GradeRefeicoes grade = gradeCarregada.get();
+        var foraDoHorario = grade.bloqueioDoHorario(horario);
+        if (foraDoHorario.isPresent()) return ValidarConsumoResponse.bloqueado(foraDoHorario.get());
 
         Aluno identificado = null;
         if (request.metodoIdentificacao() == MetodoIdentificacao.FACIAL) {
             var identificacao = identificarPorRosto(request.fotoBase64());
             if (identificacao.bloqueio() != null) {
-                return ValidarConsumoResponse.bloqueado(identificacao.bloqueio(), turno);
+                return ValidarConsumoResponse.bloqueado(identificacao.bloqueio());
             }
             identificado = identificacao.aluno();
         }
@@ -88,9 +92,9 @@ public class ValidacaoConsumoService {
         UUID alunoIdentificadoId = identificado == null ? null : identificado.getId();
         try {
             return transactionTemplate.execute(
-                status -> validarDentroDaTransacao(request, alunoIdentificadoId, agora, turno, data));
+                status -> validarDentroDaTransacao(request, alunoIdentificadoId, grade, agora, horario, data));
         } catch (DataIntegrityViolationException exception) {
-            return ValidarConsumoResponse.bloqueado("CONSUMO_RECENTE_BLOQUEADO", turno);
+            return ValidarConsumoResponse.bloqueado("CONSUMO_RECENTE_BLOQUEADO");
         }
     }
 
@@ -120,45 +124,57 @@ public class ValidacaoConsumoService {
     }
 
     private ValidarConsumoResponse validarDentroDaTransacao(ValidarConsumoRequest request, UUID alunoIdentificadoId,
-                                                            Instant agora, Turno turno, LocalDate data) {
+                                                            GradeRefeicoes grade, Instant agora, LocalTime horario,
+                                                            LocalDate data) {
         Aluno aluno = (request.metodoIdentificacao() == MetodoIdentificacao.FACIAL
             ? alunoRepository.findByIdAndAtivoTrue(alunoIdentificadoId)
             : alunoRepository.findByCodigoPublicoAndAtivoTrue(request.alunoCodigo())).orElse(null);
-        if (aluno == null) return ValidarConsumoResponse.bloqueado("ALUNO_NAO_ENCONTRADO_OU_INATIVO", turno);
+        if (aluno == null) return ValidarConsumoResponse.bloqueado("ALUNO_NAO_ENCONTRADO_OU_INATIVO");
 
-        Cardapio cardapio = cardapioRepository.findByDataAndTurnoAndAtivoTrue(data, turno).orElse(null);
-        if (cardapio == null) return ValidarConsumoResponse.bloqueado("CARDAPIO_NAO_CONFIGURADO", turno);
+        Turma turma = enturmacaoRepository.vigenteEm(aluno.getId(), data).map(e -> e.getTurma()).orElse(null);
+        var resolucao = grade.resolver(horario, turma == null ? null : turma.getTurno());
+        if (resolucao.refeicaoNaJanela() != null) return bloqueioPorTurma(aluno, turma, resolucao);
+        if (resolucao.bloqueada()) return bloqueio(aluno, null, null, resolucao.motivoBloqueio());
+        TipoRefeicao refeicao = resolucao.refeicao();
 
-        if (auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTurnoAndResultadoAndInstanteGreaterThanEqual(
-            aluno.getId(), data, turno, ResultadoConsumo.AUTORIZADO, agora.minus(bloqueioRepeticao))) {
-            registrarBloqueio(aluno, cardapio, data, turno, agora, request, "CONSUMO_RECENTE_BLOQUEADO");
-            return bloqueio(aluno, cardapio, turno, "CONSUMO_RECENTE_BLOQUEADO");
+        Cardapio cardapio = cardapioRepository.findByDataAndTipoRefeicaoIdAndAtivoTrue(data, refeicao.getId())
+            .orElse(null);
+        if (cardapio == null) return bloqueio(aluno, refeicao, null, "CARDAPIO_NAO_CONFIGURADO");
+
+        var consumo = new Consumo(aluno, turma, refeicao, cardapio, data, agora, request);
+        if (auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteGreaterThanEqual(
+            aluno.getId(), data, refeicao.getId(), ResultadoConsumo.AUTORIZADO, agora.minus(bloqueioRepeticao))) {
+            auditoriaRepository.save(consumo.auditoria(ResultadoConsumo.BLOQUEADO, "CONSUMO_RECENTE_BLOQUEADO"));
+            return bloqueio(aluno, refeicao, cardapio, "CONSUMO_RECENTE_BLOQUEADO");
         }
 
-        auditoriaRepository.saveAndFlush(
-            novaAuditoria(aluno, cardapio, data, turno, agora, request, ResultadoConsumo.AUTORIZADO, null, null));
+        auditoriaRepository.saveAndFlush(consumo.auditoria(ResultadoConsumo.AUTORIZADO, null));
         return new ValidarConsumoResponse(ResultadoConsumo.AUTORIZADO, "VERDE", aluno.getId(), aluno.getNome(),
-            turno, cardapio.getNomeRefeicao(), agora, null);
+            refeicao.getId(), refeicao.getNome(), cardapio.getNomeRefeicao(), agora, null, null, null);
     }
 
-    private void registrarBloqueio(Aluno aluno, Cardapio cardapio, LocalDate data, Turno turno, Instant agora,
-                                    ValidarConsumoRequest request, String motivo) {
-        auditoriaRepository.save(
-            novaAuditoria(aluno, cardapio, data, turno, agora, request, ResultadoConsumo.BLOQUEADO, motivo, null));
+    /** Passagem já resolvida (aluno, turma vigente, refeição e cardápio), pronta para virar auditoria. */
+    private record Consumo(Aluno aluno, Turma turma, TipoRefeicao refeicao, Cardapio cardapio, LocalDate data,
+                           Instant agora, ValidarConsumoRequest request) {
+
+        AuditoriaConsumo auditoria(ResultadoConsumo resultado, String motivo) {
+            return new AuditoriaConsumo(UUID.randomUUID(), aluno, cardapio, data, refeicao.getId(),
+                refeicao.getNome(), agora, request.metodoIdentificacao(), resultado, motivo, UUID.randomUUID(), null,
+                turma == null ? null : turma.getId(),
+                turma == null ? AuditoriaConsumo.SEM_TURMA : turma.getCodigo());
+        }
     }
 
-    private AuditoriaConsumo novaAuditoria(Aluno aluno, Cardapio cardapio, LocalDate data, Turno turno, Instant agora,
-                                            ValidarConsumoRequest request, ResultadoConsumo resultado, String motivo,
-                                            String chave) {
-        var turma = enturmacaoRepository.vigenteEm(aluno.getId(), data).map(e -> e.getTurma()).orElse(null);
-        return new AuditoriaConsumo(UUID.randomUUID(), aluno, cardapio, data, turno, agora,
-            request.metodoIdentificacao(), resultado, motivo, UUID.randomUUID(), chave,
-            turma == null ? null : turma.getId(),
-            turma == null ? AuditoriaConsumo.SEM_TURMA : turma.getCodigo());
-    }
-
-    private ValidarConsumoResponse bloqueio(Aluno aluno, Cardapio cardapio, Turno turno, String motivo) {
+    private ValidarConsumoResponse bloqueio(Aluno aluno, TipoRefeicao refeicao, Cardapio cardapio, String motivo) {
         return new ValidarConsumoResponse(ResultadoConsumo.BLOQUEADO, "VERMELHO", aluno.getId(), aluno.getNome(),
-            turno, cardapio.getNomeRefeicao(), null, motivo);
+            refeicao == null ? null : refeicao.getId(), refeicao == null ? null : refeicao.getNome(),
+            cardapio == null ? null : cardapio.getNomeRefeicao(), null, motivo, null, null);
+    }
+
+    private ValidarConsumoResponse bloqueioPorTurma(Aluno aluno, Turma turma, ResolucaoRefeicao resolucao) {
+        var naJanela = resolucao.refeicaoNaJanela();
+        return new ValidarConsumoResponse(ResultadoConsumo.BLOQUEADO, "VERMELHO", aluno.getId(), aluno.getNome(),
+            naJanela.getId(), naJanela.getNome(), null, null, resolucao.motivoBloqueio(),
+            turma.getTurno().name(), naJanela.getTurnos().stream().sorted().map(Enum::name).toList());
     }
 }

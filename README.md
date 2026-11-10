@@ -15,7 +15,7 @@ O protótipo é formado por três repositórios que rodam juntos:
 
 | Repositório | Papel | Stack | Porta local |
 |---|---|---|---|
-| `front-merenda-escolar` | Telas: fila (QR Code e facial), cardápio, fechamento de turno, cadastro de alunos e turmas, dashboard | Angular 20, Tailwind 4, Chart.js, html5-qrcode | 4200 |
+| `front-merenda-escolar` | Telas: fila (QR Code e facial), cardápio, fechamento da refeição, cadastro de alunos e turmas, dashboard | Angular 20, Tailwind 4, Chart.js, html5-qrcode | 4200 |
 | `api-merenda-escolar` | Regras de negócio, persistência, auditoria da fila, consolidação, jobs de relatório com LLM | Spring Boot 3.5, Java 25, Spring AI, Flyway, H2 em arquivo | 8081 |
 | `analytics-merenda-escolar` | Cálculos determinísticos (indicadores, tendências, previsão) e reconhecimento facial (DeepFace) | FastAPI, Python 3.12+ | 8000 |
 
@@ -49,13 +49,14 @@ O código fica em `src/main/java/br/com/frankcardoso/merenda/`, um pacote por m�
 | `aluno` | Cadastro de alunos (código público do QR Code, matrícula, ativo), transferência de turma e cadastro do rosto, guardando só o embedding. |
 | `analytics` | Portas e adapters HTTP para o serviço Python: indicadores logísticos, previsão de consumo e tendência por item. |
 | `biometria` | Porta de reconhecimento facial (gerar embedding e identificar 1:N), a regra que reúne os candidatos e decide, e o adapter HTTP para o DeepFace do serviço Python. Não tem endpoint próprio. |
-| `cardapio` | Cardápio por data e turno, com itens que referenciam receita por id; exclusão lógica; backfill de `receitaId` em cardápios antigos. |
+| `cardapio` | Cardápio por data e refeição, com itens que referenciam receita por id; exclusão lógica; backfill de `receitaId` em cardápios antigos. |
 | `catalogo` | Receitas e ingredientes, carregados de `src/main/resources/dados/*.tsv`, e a listagem de receitas usada no cadastro de cardápio. |
-| `fila` | Validação síncrona do consumo, resolução do turno pelo relógio e auditoria de consumo (`auditoria_consumo`). |
-| `gestao` | Consolidação do consumo por dia e turno, montagem dos indicadores do dashboard (calculados no Python) e lista de cardápios analisáveis. Não tem tabela própria. |
+| `fila` | Validação síncrona do consumo, resolução da refeição pelo relógio e pelo turno da turma (`GradeRefeicoes.resolver`) e auditoria de consumo (`auditoria_consumo`). |
+| `gestao` | Consolidação do consumo por dia e refeição, montagem dos indicadores do dashboard (calculados no Python) e lista de cardápios analisáveis. Não tem tabela própria. |
 | `historico` | Histórico sintético de consumo (de `historico-fake.tsv`) e os recortes dele que vão para o prompt: ranking, taxa e série diária por item. |
 | `inteligencia` | Porta `AnaliseLogisticaPort` e adapters de LLM: fake (padrão), Gemini e Groq via Spring AI, com fallback Gemini → Groq. |
-| `medicao` | Medição de sobra por item no fechamento do turno: porções preparadas e servidas, sobra não distribuída e resto no prato. |
+| `medicao` | Medição de sobra por item no fechamento da refeição: porções preparadas e servidas, sobra não distribuída e resto no prato. |
+| `refeicao` | Grade de refeições (`TipoRefeicao`: nome, ordem, janela `[início, fim)` e turnos de turma com direito), a regra que resolve a refeição de um horário (`GradeRefeicoes`) e `/api/v1/tipos-refeicao` (leitura e escrita). A grade é semeada pela migration `V14` e é editável pela tela "Grade de refeições"; não há exclusão. |
 | `relatorio` | Job do relatório com IA: criação, worker assíncrono, estados e persistência da fotografia dos indicadores e do resultado. |
 | `shared` | Configuração transversal (relógio e fuso `America/Sao_Paulo`, executor assíncrono, CORS para `http://localhost:4200`), carga dos dados de demonstração e tradução de erros para `ProblemDetail`. |
 | `turma` | Cadastro de turmas e enturmação: vínculo aluno–turma com vigência e sem sobreposição. |
@@ -77,14 +78,15 @@ Nem todo módulo tem as quatro: `catalogo` não tem `application` (o controller 
 
 `POST /api/v1/fila/validacoes` chama `ValidacaoConsumoService.validar`. Tudo acontece dentro da requisição. A fila nunca chama o LLM e só chama o serviço Python no modo facial.
 
-1. **Turno pelo relógio** (fuso `America/Sao_Paulo`): antes das 12h é `MANHA`, antes das 18h é `TARDE`, antes das 23h é `NOITE`; das 23h à meia-noite bloqueia com `FORA_DO_TURNO`. A fila nunca resolve `INTEGRAL`, que é modalidade do aluno e não faixa de horário.
+1. **Horário na grade** (fuso `America/Sao_Paulo`): se nenhuma refeição da grade tem o horário atual na janela, bloqueia com `FORA_DO_HORARIO_DE_REFEICAO`, antes de qualquer identificação. A janela é `[início, fim)`: o instante do início entra e o do fim não. Se a grade estiver vazia ou duas refeições se sobrepuserem para o mesmo turno, bloqueia com `GRADE_DE_REFEICOES_INVALIDA` (e registra aviso no log); a fila nunca devolve 500 por isso.
 2. Se `metodoIdentificacao` é `FACIAL`, identifica o aluno pela foto, **antes** da transação, para a chamada ao analytics não segurar conexão de banco (ver [Identificação facial](#identificação-facial)). Se não identifica, bloqueia com o motivo do facial.
 3. Numa transação, busca o aluno **ativo**, com lock pessimista para evitar dupla autorização concorrente: pelo `alunoCodigo` (código público) no QR Code, pelo aluno já identificado no facial. Sem aluno: `ALUNO_NAO_ENCONTRADO_OU_INATIVO`.
-4. Busca o cardápio ativo da data e do turno. Sem cardápio: `CARDAPIO_NAO_CONFIGURADO`.
-5. Se o aluno já teve consumo autorizado no mesmo dia e turno dentro da janela `merenda.fila.bloqueio-repeticao` (padrão `2m`), bloqueia com `CONSUMO_RECENTE_BLOQUEADO`. Depois da janela, o mesmo aluno pode validar de novo no turno atual.
-6. Autoriza e grava a linha em `auditoria_consumo` com a turma vigente carimbada (`turma_id`/`turma_nome`, ou `Sem turma`).
+4. **Refeição pelo horário e pelo turno da turma.** Pega a turma vigente do aluno na data e escolhe a refeição cuja janela contém o horário e que dá direito ao turno dessa turma. O regime vem do turno da turma: `INTEGRAL` é turma de tempo integral e `MANHA`, `TARDE` e `NOITE` são turmas parciais daquele período. Há refeição no horário, mas não para a turma: `REFEICAO_NAO_PREVISTA_PARA_TURMA`. Aluno sem turma vigente vale para qualquer refeição da janela (a de menor `ordem`, se houver mais de uma) e é carimbado como `Sem turma`.
+5. Busca o cardápio ativo da data e da refeição. Sem cardápio: `CARDAPIO_NAO_CONFIGURADO`.
+6. Se o aluno já teve consumo autorizado no mesmo dia e **na mesma refeição** dentro da janela `merenda.fila.bloqueio-repeticao` (padrão `2m`), bloqueia com `CONSUMO_RECENTE_BLOQUEADO`. Depois da janela, o mesmo aluno pode validar de novo na refeição: a repetição é autorizada, registrada e entra na análise. Refeições diferentes não se bloqueiam: um aluno integral passa no café, no lanche e no almoço.
+7. Autoriza e grava a linha em `auditoria_consumo` com a refeição (`tipo_refeicao_id` e `refeicao_nome`) e a turma vigente carimbadas (`turma_id`/`turma_nome`, ou `Sem turma`).
 
-A resposta de negócio é sempre HTTP 200: `resultado` `AUTORIZADO` com `sinal` `VERDE`, ou `BLOQUEADO` com `sinal` `VERMELHO` e `motivo`. Entrada inválida (por exemplo, `QR_CODE` sem `alunoCodigo`) volta como `ProblemDetail` 400. Só a autorização e o bloqueio por repetição são gravados em `auditoria_consumo`; os demais bloqueios, inclusive os do facial, voltam na resposta sem registro.
+A resposta de negócio é sempre HTTP 200: `resultado` `AUTORIZADO` com `sinal` `VERDE`, ou `BLOQUEADO` com `sinal` `VERMELHO` e `motivo`. Entrada inválida (por exemplo, `QR_CODE` sem `alunoCodigo`) volta como `ProblemDetail` 400. A resposta devolve a refeição (`tipoRefeicaoId` e `refeicao`) quando ela foi resolvida. Só a autorização e o bloqueio por repetição são gravados em `auditoria_consumo`; os demais bloqueios, inclusive os de horário, turma e os do facial, voltam na resposta sem registro.
 
 ### Fluxo do relatório com IA (assíncrono)
 
@@ -106,9 +108,9 @@ sequenceDiagram
     F->>S: GET /api/v1/relatorios-ia/{id} até CONCLUIDO ou FALHOU
 ```
 
-1. `RelatorioIAService.criar` valida a amostra: pelo menos 20 dias com fechamento nos 30 dias até `dataReferencia` e, para cada receita escolhida, pelo menos 3 dias medidos. Grava `relatorio_ia` como `PENDENTE` e entrega o id ao worker.
+1. `RelatorioIAService.criar` valida a amostra: pelo menos 20 dias com fechamento **da refeição** nos 30 dias até `dataReferencia` e, para cada receita escolhida, pelo menos 3 dias medidos. Grava `relatorio_ia` como `PENDENTE` e entrega o id ao worker.
 2. `RelatorioIAWorker.processar` é `@Async("relatorioExecutor")` (`AsyncConfig`: 1 a 2 threads, fila de 20), fora do caminho da fila:
-   - consolida o consumo do dia e turno (`ConsolidacaoConsumoService`);
+   - consolida o consumo do dia e da refeição (`ConsolidacaoConsumoService`);
    - pede os indicadores ao Python (`POST /api/v1/indicadores-logisticos`); se falhar, os indicadores ficam `INDISPONIVEL`;
    - pede a previsão de consumo (`POST /api/v1/previsoes-consumo`); se falhar, segue com `previsaoConsumo: null` e um aviso;
    - junta o histórico (Java) com a tendência por item (`POST /api/v1/tendencias-item`); se falhar, segue sem tendência;
@@ -152,7 +154,7 @@ O Actuator expõe só `health` e `info`. O CORS de `/api/**` libera apenas `http
 
 - URL: `jdbc:h2:file:./data/merenda;MODE=PostgreSQL;AUTO_SERVER=TRUE`, usuário `sa`, senha vazia. O arquivo é `data/merenda.mv.db`; a pasta `data/` está no `.gitignore`.
 - O console web do H2 não está habilitado. Com `AUTO_SERVER=TRUE`, um cliente externo (por exemplo, o Database do IntelliJ) pode abrir o mesmo arquivo com a API no ar.
-- O schema é do Flyway: migrations em `src/main/resources/db/migration` (`V1` a `V13`; não existe `V12`). O Hibernate roda com `ddl-auto: validate`, então mudança de entidade sem migration impede a subida.
+- O schema é do Flyway: migrations em `src/main/resources/db/migration` (`V1` a `V16`, sem `V12`). O Hibernate roda com `ddl-auto: validate`, então mudança de entidade sem migration impede a subida. As três últimas são da refeição: `V14` cria `tipo_refeicao` e `tipo_refeicao_turno` e semeia a grade; `V15` acrescenta `tipo_refeicao_id` (e `refeicao_nome` na auditoria) a `cardapio`, `auditoria_consumo`, `medicao_sobra`, `relatorio_ia` e `historico_consumo` e preenche as linhas antigas; `V16` remove a coluna `turno` das quatro tabelas operacionais (só `relatorio_ia.turno` fica, para os relatórios antigos).
 - Nos testes, o banco é H2 em memória (ver [Testes](#testes)).
 
 ### Zerar o banco local
@@ -163,7 +165,7 @@ Para começar de um banco vazio, pare a API, apague os arquivos `data/merenda*` 
 rm -f data/merenda*
 ```
 
-O Flyway recria o schema e os loaders recarregam catálogo, histórico, medições e [dados de demonstração](#dados-de-demonstração). Isso apaga também cardápios, consumos, rostos e relatórios criados à mão.
+O Flyway recria o schema e os loaders recarregam catálogo, histórico, medições e [dados de demonstração](#dados-de-demonstração). Uma base criada antes da migration V14 precisa ser recriada assim: as turmas antigas ficaram todas no turno `MANHA`. Isso apaga também cardápios, consumos, rostos e relatórios criados à mão: o rosto que você cadastrou em um aluno precisa ser cadastrado de novo, de preferência em um aluno de turma integral (ver [Roteiro da demonstração facial](#roteiro-da-demonstração-facial)).
 
 ### Variáveis de ambiente
 
@@ -192,6 +194,7 @@ O adapter de IA que roda depende só do profile Spring `gemini` (ver [Configura�
 | `merenda.medicao.escola-id` | `1` | Escola única do protótipo nas medições e nos indicadores (padrão só no código). |
 | `merenda.medicao.dias-janela-ingredientes` | `180` | Janela, em dias, das medições usadas na análise por ingrediente (padrão só no código). |
 | `merenda.demo.dias` / `merenda.demo.alunos` | `60` / `150` | Ver [Dados de demonstração](#dados-de-demonstração). |
+| `merenda.demo.horario` | vazio (relógio real) | Relógio de demonstração: com `HH:mm` (por exemplo `12:00`), a API usa a data de hoje com esse horário, que segue avançando junto com o relógio real (`ApplicationConfig`, `shared/config`). Valor fora do formato `HH:mm` impede a subida. Ver [Roteiro da demonstração](#roteiro-da-demonstração-com-o-horário). |
 
 Para mudar uma propriedade numa execução, passe-a como argumento, por exemplo `mvn -B spring-boot:run -Dspring-boot.run.arguments=--merenda.demo.dias=0`.
 
@@ -223,15 +226,16 @@ O `DadosIniciaisConfig` roda antes de tudo, na subida do contexto. Os componente
 
 O `DadosDemonstracaoLoader` (`shared/config`, `@Order(6)`) trabalha a partir da data de hoje no fuso `America/Sao_Paulo` e cria:
 
-- **Alunos** até completar `merenda.demo.alunos`, com nome `Aluno Demonstracao N`. Os alunos já existentes entram na conta; com os três iniciais, os cinco com rosto e o padrão de 150, vão de `ALU-0009` a `ALU-0150`. Esses alunos não têm rosto cadastrado.
-- **Turmas** `1A` a `9A` (turno `MANHA`, capacidade 30) e a **enturmação** de cada aluno sem vínculo, desde antes do primeiro dia do histórico. Um aluno é transferido para a turma seguinte no meio do intervalo, para a transferência ter o que mostrar.
-- **Cardápios** de demonstração (300 refeições planejadas, descrição `Cardapio de demonstracao`, itens do catálogo) para `MANHA`, `TARDE` e `INTEGRAL` em cada dia útil dos últimos `merenda.demo.dias` dias até hoje. Hoje ganha cardápio em **todos** os turnos, inclusive `NOITE` e fim de semana, sem consumo além do que já passou, para a fila funcionar a qualquer hora da apresentação.
-- **Consumos** em `auditoria_consumo`, nunca com instante depois de agora e nunca para os alunos que têm rosto cadastrado (o consumo sintético em nome deles bloquearia a primeira leitura ao vivo por consumo recente): adesão em torno de 31% do planejado (cenário de desperdício alto, como no dado real), repetições mais frequentes nas turmas menores (1A a 3A), bloqueios em torno de 4% das autorizações e cerca de 1 em cada 10 registros marcado como `FACIAL`.
-- **Medições de sobra** sintéticas (origem `SINTETICO`) do cardápio principal do `INTEGRAL`, em cada dia útil.
+- **Alunos** até completar `merenda.demo.alunos`, com nome `Aluno Demonstracao N`. Os alunos já existentes entram na conta; com os três iniciais, os cinco com rosto e o padrão de 150, vão de `ALU-0009` a `ALU-0150`. Esses alunos não têm rosto cadastrado. Só alunos com código `ALU-<número>` recebem turma e consumo sintéticos; os demais ficam como estão.
+- **Turmas** `1A` a `9A` (capacidade 30): `1A` a `3A` são do turno `MANHA`, `4A` a `6A` do `TARDE` e `7A` a `9A` `INTEGRAL`. Cada aluno sem vínculo é enturmado desde antes do primeiro dia do histórico, pelo número do código; os alunos com rosto (`ALU-9001` a `ALU-9005`) vão todos para a `7A`, integral, para passarem na fila facial em qualquer refeição diurna. Um aluno sem rosto é transferido para a turma seguinte no meio do intervalo, para a transferência ter o que mostrar.
+- **Cardápios** de demonstração (descrição `Cardapio de demonstracao`, itens do catálogo, planejado igual ao número de alunos com direito à refeição) para cada refeição da grade que atende alguma turma (Café da manhã, Lanche da manhã, Almoço e Lanche da tarde) em cada dia útil dos últimos `merenda.demo.dias` dias até hoje. Hoje ganha cardápio em **todas** as refeições da grade, inclusive o Lanche da noite (nenhuma turma de demonstração é noturna) e em fim de semana, sem consumo além do que já passou, para a fila funcionar a qualquer horário da apresentação.
+- **Histórico sintético** (cardápios, consumos e medições dos dias anteriores) só das cinco refeições semeadas, com os turnos originais delas; refeições criadas ou turnos acrescentados na tela começam sem histórico, e refeição sem turnos não ganha cardápio de hoje.
+- **Consumos** em `auditoria_consumo`, por refeição e só para quem tem direito a ela pelo turno da turma (a turma parcial não consome no almoço, por exemplo), nunca com instante depois de agora e nunca para os alunos que têm rosto cadastrado (o consumo sintético em nome deles bloquearia a primeira leitura ao vivo por consumo recente): repetições mais frequentes nas turmas menores (1A a 3A), bloqueios em torno de 4% das autorizações e cerca de 1 em cada 10 registros marcado como `FACIAL`. O atendimento médio por refeição (autorizados, repetições incluídas, sobre o planejado das refeições servidas, isto é, dos dias com fechamento) mira 93% no Almoço e 90% no Lanche da manhã, sem ação de planejamento na análise, e 62% no Café da manhã e 68% no Lanche da tarde, que geram a ação "Rever a quantidade planejada"; a variação diária é de 5 pontos.
+- **Medições de sobra** sintéticas (origem `SINTETICO`) de cada refeição com cardápio de demonstração, em cada dia útil, o que dá mais de 20 dias de fechamento por refeição com turma para a análise. Cada receita segue um perfil, para a análise da secretaria ter exemplos claros: beterraba, chuchu, couve, brócolis, repolho e cenoura voltam no prato (aceitação de cerca de 70% a 80%, ação "Revisar a preparação"); arroz, macarrão e pão são preparados acima do consumo (sobra na panela de 15% a 25%, ação "Preparar menos"); as demais ficam acima de 92% de aceitação e com sobra abaixo de 10%. Os valores são determinísticos (semente 2026). Nenhum fechamento de hoje vem pronto: fica para a tela, e o painel do dia mostra cada refeição conforme o horário.
 
 **Alunos com rosto (`RostosDemonstracaoLoader`).** Lê `src/main/resources/demo/rostos-demo.json` (propriedade `merenda.demo.rostos`, padrão `classpath:demo/rostos-demo.json`) e cria `ALU-9001` Helena Duarte, `ALU-9002` Lívia Campos, `ALU-9003` Rafael Moreira, `ALU-9004` Otávio Brandão e `ALU-9005` Lucas Ferreira, com o embedding já calculado. Os nomes são fictícios; os rostos vêm de adultos do dataset público LFW, e o JSON guarda só vetores, nenhuma imagem. É idempotente: não duplica, e só preenche o embedding de quem existe sem rosto. Semente ausente ou ilegível vira log, não falha a subida. O JSON é gerado por `analytics-merenda-escolar/scripts/gerar_rostos_demo.py`.
 
-**Idempotência:** o `DadosDemonstracaoLoader` só cria o que falta. Turmas são procuradas pelo código, a enturmação só é feita para quem não tem vínculo, o cardápio só é criado onde não há cardápio ativo no dia e turno, e a medição só onde ainda não existe. O consumo só é gerado para dia e turno sem nenhuma autorização registrada, o que preserva o que foi bipado pela tela da fila. Reiniciar não duplica dados; a cada subida o loader completa os dias que faltam até hoje. Cardápios de demonstração antigos, sem `receitaId`, são corrigidos.
+**Idempotência:** o `DadosDemonstracaoLoader` só cria o que falta. Turmas são procuradas pelo código, a enturmação só é feita para quem não tem vínculo, o cardápio só é criado onde não há cardápio ativo no dia e na refeição, e a medição só onde ainda não existe. O consumo só é gerado para dia e refeição sem nenhuma autorização registrada, o que preserva o que foi bipado pela tela da fila. Reiniciar não duplica dados; a cada subida o loader completa os dias que faltam até hoje. Cardápios de demonstração antigos, sem `receitaId`, são corrigidos.
 
 **Configuração:**
 
@@ -256,24 +260,31 @@ Os endpoints de negócio ficam sob `/api/v1` e trocam JSON. Entrada inválida, r
 | `aluno` | `POST /api/v1/alunos/{id}/transferencias` | `{"turmaId", "dataMudanca"}`: fecha o vínculo vigente no dia anterior e abre o novo. |
 | `aluno` | `POST /api/v1/alunos/{id}/rosto` | `{"fotoBase64"}`: gera o embedding no analytics e guarda só o vetor. Foto sem rosto ou com mais de um rosto: 400. Rosto já cadastrado em outro aluno ativo: 409. Analytics fora do ar: 503. |
 | `turma` | `GET /api/v1/turmas` e `GET /api/v1/turmas/{id}` | Lista e detalhe. |
-| `turma` | `POST /api/v1/turmas` | Cria (201): `codigo`, `descricao`, `turno`, `quantidadeMaximaAlunos`. Código repetido: 409. |
+| `turma` | `POST /api/v1/turmas` | Cria (201): `codigo`, `descricao`, `turno` (o regime da turma: `MANHA`, `TARDE`, `NOITE` ou `INTEGRAL`), `quantidadeMaximaAlunos`. Código repetido: 409. |
 | `turma` | `PUT /api/v1/turmas/{id}` | Atualiza. |
 | `turma` | `DELETE /api/v1/turmas/{id}` | Exclui (204). Turma com enturmações, atuais ou históricas, ou com consumos: 409. |
+| `refeicao` | `GET /api/v1/tipos-refeicao` | A grade ordenada por `ordem`: `id`, `nome`, `ordem`, `inicio`, `fim` e `turnos` com direito. É de onde o front tira os `tipoRefeicaoId` dos demais endpoints. |
+| `refeicao` | `POST /api/v1/tipos-refeicao` | Cria uma refeição (201): `nome` (até 60 caracteres), `inicio` e `fim` (`"HH:mm"`, janela `[início, fim)`) e `turnos` (`MANHA`, `TARDE`, `NOITE`, `INTEGRAL`; pode ser vazio). A `ordem` é recalculada pelo `inicio` (1..n). Início não anterior ao fim ou sobreposição para o mesmo turno: 422 (nada é gravado); nome repetido, sem diferenciar maiúsculas: 409; campo ausente ou em branco: 400. |
+| `refeicao` | `PUT /api/v1/tipos-refeicao/{id}` | Edita nome, janela e turnos (200), com as mesmas regras do POST; id fora da grade: 404. A mudança vale daqui para frente: auditoria, cardápios e medições já gravados guardam o id da refeição (e a auditoria, o nome da época) e não são reescritos. |
 | `fila` | `POST /api/v1/fila/validacoes` | `{"alunoCodigo", "metodoIdentificacao", "fotoBase64"}`, com `metodoIdentificacao` `QR_CODE` (exige `alunoCodigo`, senão 400) ou `FACIAL` (exige só `fotoBase64`; `alunoCodigo` é ignorado): autoriza ou bloqueia o consumo; bloqueio de negócio também volta 200. |
 | `cardapio` | `GET /api/v1/cardapios` | Cardápios ativos, do mais recente para o mais antigo. |
-| `cardapio` | `POST /api/v1/cardapios` | Cria (201): `data`, `turno`, `nomeRefeicao`, `descricao`, `itens` (`receitaId`, `nome`, `quantidade`) e `quantidadePlanejada`. Data passada ou receita desconhecida: 400; cardápio ativo já existente no dia e turno: 409. |
+| `cardapio` | `POST /api/v1/cardapios` | Cria (201): `data`, `tipoRefeicaoId`, `nomeRefeicao`, `descricao`, `itens` (`receitaId`, `nome`, `quantidade`) e `quantidadePlanejada`. Data passada ou receita desconhecida: 400; cardápio ativo já existente no dia e na refeição: 409. |
 | `cardapio` | `PUT /api/v1/cardapios/{id}` | Atualiza. |
 | `cardapio` | `DELETE /api/v1/cardapios/{id}` | Desativa (exclusão lógica, 204); a linha continua referenciada pela auditoria. |
 | `catalogo` | `GET /api/v1/receitas` | Receitas ativas, por nome, para o cadastro de cardápio escolher por id. |
-| `medicao` | `GET /api/v1/medicoes-sobra?data=&turno=` | Medições do dia e turno. |
-| `medicao` | `POST /api/v1/medicoes-sobra` | Lança a medição de um item; relançar o mesmo item no mesmo dia e turno sobrescreve. A receita precisa estar no cardápio ativo do dia e turno. |
-| `medicao` | `POST /api/v1/medicoes-sobra/fechamento` | `{"medicoes": [...]}`: fechamento do turno, todos os itens com a mesma data e turno. |
-| `gestao` | `GET /api/v1/gestao/consolidacoes?data=&turno=` | Consolidação determinística do consumo do dia e turno. |
-| `gestao` | `GET /api/v1/gestao/cardapios-analise?inicio=&fim=&turno=` | Cardápios servidos no período, agrupados pelas receitas, com as datas de fechamento completo. |
-| `gestao` | `GET /api/v1/gestao/indicadores?data=&turno=` | Indicadores do dashboard, calculados no analytics. Parâmetros opcionais: `receitaIds` e `datas`. |
-| `relatorio` | `POST /api/v1/relatorios-ia` | Cria o job (202 com `Location`): `dataReferencia`, `turno` e, opcionais, `receitaIds`, `datasSelecionadas` e `turmaId`. |
-| `relatorio` | `GET /api/v1/relatorios-ia?data=&turno=` | Últimos 20 relatórios do filtro, mais recentes primeiro. |
+| `medicao` | `GET /api/v1/medicoes-sobra?data=&tipoRefeicaoId=` | Medições do dia e da refeição. |
+| `medicao` | `POST /api/v1/medicoes-sobra` | Lança a medição de um item; relançar o mesmo item no mesmo dia e refeição sobrescreve. A receita precisa estar no cardápio ativo do dia e da refeição. |
+| `medicao` | `POST /api/v1/medicoes-sobra/fechamento` | `{"medicoes": [...]}`: fechamento da refeição, todos os itens com a mesma data e refeição. |
+| `fechamento` | `GET /api/v1/fechamentos/dia?data=` | Painel do dia: situação de cada refeição da grade (`SEM_CARDAPIO`, `FECHADA`, `AGUARDANDO`, `EM_ANDAMENTO`, `PENDENTE`), com receitas medidas e total do cardápio. |
+| `fechamento` | `GET /api/v1/fechamentos/pendencias?ate=&dias=` | Refeições com cardápio, janela já encerrada e sem fechamento completo nos `dias` até `ate` (1 a 31, padrão 7). |
+| `gestao` | `GET /api/v1/gestao/consolidacoes?data=&tipoRefeicaoId=` | Consolidação determinística do consumo do dia e da refeição. |
+| `gestao` | `GET /api/v1/gestao/cardapios-analise?inicio=&fim=&tipoRefeicaoId=` | Cardápios servidos no período, agrupados pelas receitas, com as datas de fechamento completo. |
+| `gestao` | `GET /api/v1/gestao/indicadores?data=&tipoRefeicaoId=` | Indicadores do dashboard, calculados no analytics. Parâmetros opcionais: `receitaIds` e `datas`. |
+| `relatorio` | `POST /api/v1/relatorios-ia` | Cria o job (202 com `Location`): `dataReferencia`, `tipoRefeicaoId` e, opcionais, `receitaIds`, `datasSelecionadas` e `turmaId`. |
+| `relatorio` | `GET /api/v1/relatorios-ia?data=&tipoRefeicaoId=` | Últimos 20 relatórios do filtro, mais recentes primeiro. |
 | `relatorio` | `GET /api/v1/relatorios-ia/{id}` | Status, resultado e a fotografia de `indicadores` do relatório. |
+
+`tipoRefeicaoId` é obrigatório nesses endpoints; um id fora da grade volta 404. Os relatórios gerados antes da refeição continuam abrindo por `GET /api/v1/relatorios-ia/{id}`, com o `turno` antigo e a refeição mapeada (ver [Dados antigos](#dados-antigos-e-mapeamento-do-legado)).
 
 Fora de `/api/v1`: `GET /actuator/health`, `GET /actuator/info`, `/swagger-ui.html` e `/v3/api-docs`.
 
@@ -289,7 +300,7 @@ A identificação facial é **1:N**: a foto descobre quem é o aluno, sem o oper
 { "metodoIdentificacao": "FACIAL", "fotoBase64": "..." }
 ```
 
-A API carrega os alunos ativos com rosto e pede ao analytics a identificação 1:N (`POST /api/v1/reconhecimento-facial/identificacoes`), mandando a foto e os embeddings dos candidatos. O analytics escolhe o maior rosto da foto, compara com todos os candidatos e só devolve `RECONHECIDO` se a menor distância estiver abaixo do limiar (0.4, Facenet com cosseno) **e** o segundo colocado estiver pelo menos 0.08 mais longe; senão `AMBIGUO` ou `NAO_RECONHECIDO`. Candidato com embedding de outra dimensão é ignorado e contado (a API registra aviso no log). Reconhecido o aluno, valem as mesmas regras do QR Code (cardápio do turno, repetição, carimbo de turma) e a auditoria registra o método `FACIAL`.
+A API carrega os alunos ativos com rosto e pede ao analytics a identificação 1:N (`POST /api/v1/reconhecimento-facial/identificacoes`), mandando a foto e os embeddings dos candidatos. O analytics escolhe o maior rosto da foto, compara com todos os candidatos e só devolve `RECONHECIDO` se a menor distância estiver abaixo do limiar (0.4, Facenet com cosseno) **e** o segundo colocado estiver pelo menos 0.08 mais longe; senão `AMBIGUO` ou `NAO_RECONHECIDO`. Candidato com embedding de outra dimensão é ignorado e contado (a API registra aviso no log). Reconhecido o aluno, valem as mesmas regras do QR Code (refeição pelo horário e pela turma, cardápio, repetição, carimbo de turma) e a auditoria registra o método `FACIAL`.
 
 Os bloqueios próprios do facial, todos sem auditoria porque não há aluno a associar:
 
@@ -308,14 +319,34 @@ Com `QR_CODE`, `alunoCodigo` é obrigatório e `fotoBase64` é ignorado. O porqu
 
 Pré-requisito, uma vez por máquina, **com internet**: o detector `opencv` baixa `haarcascade_frontalface_default.xml` e `haarcascade_eye.xml` de github.com para `~/.deepface/weights/` no primeiro uso, e os pesos do Facenet (cerca de 90 MB) vêm na primeira requisição. Faça um primeiro reconhecimento antes de apresentar, para não esbarrar no timeout nem na rede.
 
-1. Suba os três serviços: analytics (8000), API (8081) e front (4200). Os cinco alunos de exemplo (`ALU-9001` a `ALU-9005`) já nascem com rosto cadastrado.
+1. Suba os três serviços: analytics (8000), API (8081) e front (4200), com o horário combinado (ver [Roteiro da demonstração com o horário](#roteiro-da-demonstração-com-o-horário)). Os cinco alunos de exemplo (`ALU-9001` a `ALU-9005`) já nascem com rosto cadastrado, todos na turma `7A` (integral).
 2. Na fila, escolha o modo facial e use **Usar imagem** com `demo/rostos-teste/ALU-9001-teste.jpg`: o cartão fica verde com o nome de Helena Duarte. Repita com `ALU-9002` a `ALU-9005-teste.jpg`; cada imagem autoriza o aluno certo. As imagens de teste são diferentes das usadas no cadastro (origem e citação em `demo/rostos-teste/README.md`).
 3. Use `demo/rostos-teste/desconhecido.jpg`: a leitura é bloqueada com "Rosto não reconhecido" e a tela orienta o QR Code.
-4. Repita uma das imagens em menos de 2 minutos: bloqueio por consumo recente.
-5. Para ser reconhecido você mesmo: em **Alunos**, crie um aluno novo, abra o detalhe, **Cadastrar rosto** (câmera ou **Usar imagem**) e volte à fila no modo facial.
+4. Repita uma das imagens em menos de 2 minutos: bloqueio por consumo recente, na mesma refeição.
+5. Para ser reconhecido você mesmo: em **Alunos**, crie um aluno novo com turma integral (`7A` a `9A`) e data de início, abra o detalhe, **Cadastrar rosto** (câmera ou **Usar imagem**) e volte à fila no modo facial. Depois de recriar o banco, o cadastro do seu rosto se perde e precisa ser refeito. Em turma parcial, o aluno só passa nas refeições do período dela.
 6. Para voltar ao estado inicial, pare a API e apague `data/merenda*` (ver [Zerar o banco local](#zerar-o-banco-local)).
 
 A foto de teste mostrada à webcam também passa: não há prova de vida (ver limitações).
+
+### Roteiro da demonstração com o horário
+
+A grade deixa vãos (antes das 07:00, 08:00 a 09:30, 10:30 a 11:30, 13:00 a 15:00, 16:00 a 20:00 e depois das 21:00), e fora das janelas a fila bloqueia com `FORA_DO_HORARIO_DE_REFEICAO`. Para a apresentação não depender da hora real, suba a API com `merenda.demo.horario`:
+
+```bash
+mvn -B spring-boot:run -Dspring-boot.run.arguments=--merenda.demo.horario=12:00
+```
+
+Com `12:00` a fila resolve o Almoço. Roteiro sugerido, trocando o horário e reiniciando a API a cada passo (o relógio de demonstração anda junto com o real a partir do horário dado):
+
+| `merenda.demo.horario` | Refeição | Quem passa | O que mostrar |
+|---|---|---|---|
+| `07:30` | Café da manhã | Só turma integral | Aluno de `7A` (`ALU-9001`) autorizado; aluno de `1A` bloqueado com `REFEICAO_NAO_PREVISTA_PARA_TURMA`. |
+| `10:00` | Lanche da manhã | Turmas da manhã e integrais | Aluno de `1A` e aluno de `7A` autorizados; aluno de `4A` (tarde) bloqueado. |
+| `12:00` | Almoço | Só turma integral | O mesmo aluno de `7A` já passou no café e no lanche e passa de novo; repetir em menos de 2 minutos bloqueia por consumo recente. |
+| `15:30` | Lanche da tarde | Turmas da tarde e integrais | Aluno de `4A` autorizado. |
+| `09:00` | Nenhuma | Ninguém | `FORA_DO_HORARIO_DE_REFEICAO`. |
+
+Hoje tem cardápio em todas as refeições da grade e nenhum fechamento pronto: com `12:00`, o painel do Fechamento mostra Café da manhã e Lanche da manhã pendentes, o Almoço em andamento e as demais aguardando. No Dashboard, escolha a refeição na lista; no Fechamento, ela é escolhida no painel "Refeições do dia". Cada uma tem seu próprio histórico, e a taxa de execução varia muito de uma para outra. Sem `merenda.demo.horario`, vale o relógio real.
 
 ## Configuração da IA (fake, Gemini e Groq)
 
@@ -430,10 +461,10 @@ O passo a passo está em [Fluxo do relatório com IA](#fluxo-do-relatório-com-i
 
 Se o serviço Python estiver indisponível, o relatório continua sendo gerado com os dados consolidados em Java. Nesse caso, o input enviado para a IA recebe `previsaoConsumo: null` e `avisoPrevisaoConsumo` com a falha segura. Isso evita que uma API auxiliar derrube a demonstração.
 
-Primeiro consulte a consolidação determinística:
+Os ids da grade vêm de `GET /api/v1/tipos-refeicao`; o do exemplo é o do Lanche da manhã, semeado pela migration. Primeiro consulte a consolidação determinística:
 
 ```http
-GET /api/v1/gestao/consolidacoes?data=2026-08-26&turno=MANHA
+GET /api/v1/gestao/consolidacoes?data=2026-08-26&tipoRefeicaoId=5e1a0000-0000-4000-8000-000000000002
 ```
 
 Crie o job assíncrono de análise (os campos opcionais `receitaIds`, `datasSelecionadas` e `turmaId` restringem o escopo; ver [Estado atual](#estado-atual--análise-por-cardápio)):
@@ -444,7 +475,7 @@ Content-Type: application/json
 
 {
   "dataReferencia": "2026-08-26",
-  "turno": "MANHA"
+  "tipoRefeicaoId": "5e1a0000-0000-4000-8000-000000000002"
 }
 ```
 
@@ -456,26 +487,29 @@ GET /api/v1/relatorios-ia/{relatorioId}
 
 Os estados persistidos são `PENDENTE`, `PROCESSANDO`, `CONCLUIDO` e `FALHOU`. O processamento ocorre em executor separado e não compartilha o caminho crítico da fila.
 
-## Dashboard logístico — indicadores v2 (contrato `schemaVersion=4`)
+## Dashboard logístico — indicadores por refeição (contrato `schemaVersion=6`)
 
 Atualize e reinicie também o serviço Python antes de testar esta versão. O cálculo novo usa
 `POST /api/v1/indicadores-logisticos` no Python; não chama o Gemini e não exige chave de IA.
 
-- `GET /api/v1/gestao/indicadores?data=2026-09-17&turno=MANHA`: indicadores do dia e ranking histórico dos últimos 30 dias (inclusive a data de referência). `receitaIds` e `datas`, opcionais, restringem o escopo ao cardápio e às datas selecionadas.
-- `GET /api/v1/relatorios-ia?data=2026-09-17&turno=MANHA`: últimos 20 relatórios do filtro, mais recentes primeiro.
+- `GET /api/v1/gestao/indicadores?data=2026-09-17&tipoRefeicaoId=5e1a0000-0000-4000-8000-000000000003`: indicadores do dia e da refeição (aqui, o Almoço) e ranking histórico dos últimos 30 dias da mesma refeição (inclusive a data de referência). `receitaIds` e `datas`, opcionais, restringem o escopo ao cardápio e às datas selecionadas.
+- `GET /api/v1/relatorios-ia?data=2026-09-17&tipoRefeicaoId=5e1a0000-0000-4000-8000-000000000003`: últimos 20 relatórios do filtro, mais recentes primeiro.
 - `GET /api/v1/relatorios-ia/{id}`: inclui `indicadores`, a fotografia persistida usada no relatório; consultas não recalculam nem chamam IA.
 
-O contrato Java↔Python está em `schemaVersion = "4"`: cada item de `porTurma` traz `turmaId`.
-Relatórios persistidos nas versões "2" e "3" continuam abrindo.
+O contrato Java↔Python está em `schemaVersion = "6"`. Desde a "5", o pedido e a resposta trazem `refeicao` (`id` e `nome`) no lugar de `turno`, e o pedido traz `historicoSemRefeicao`, a contagem de registros do histórico do legado sem refeição correspondente, que o Python transforma em aviso. Os indicadores por turma continuam, agora dentro de uma refeição: cada item de `porTurma` traz `turmaId`. A previsão de consumo (`POST /api/v1/previsoes-consumo`) também recebe `refeicao` no lugar de `turno`. 
+A versão "6" acrescenta ao pedido `atendimentoDiario` (um item `{data, planejadas, atendidos}` por dia da janela de 30 dias com fechamento da refeição: o planejado do cardápio e as autorizações do dia) e à resposta `planoDeAcao` (ações já escritas, tipos `REVISAR_PREPARACAO`, `REDUZIR_PREPARO` e `REVER_PLANEJAMENTO`), `sobraPercentual` em cada item de `aceitacaoItens` e `mediaAtendidosDia`/`mediaPlanejadaDia` em `execucaoPlanejamento`. O adapter só aceita resposta `"6"` (e exige `planoDeAcao`).
+Relatórios persistidos nas versões "2" a "5" continuam abrindo; os campos novos vêm nulos neles.
 
 A migration V5 adiciona `relatorio_ia.indicadores_json`. Relatórios anteriores continuam
-consultáveis e retornam `indicadores: null`. Relatórios novos usam `promptVersao=v2-indicadores`.
+consultáveis e retornam `indicadores: null`. Relatórios novos usam `promptVersao=v4-secretaria`: o modelo
+escreve só `resumoExecutivo` (2 ou 3 frases para a secretaria); classificações, plano de ação, tabela por
+item e `observacaoLimitacoes` são do código, e `evidencias`/`recomendacoes` saem vazias.
 O prompt compartilhado por Gemini/Groq está em
 `inteligencia/infrastructure/chat/ChatClientAnaliseLogisticaAdapter.java`.
 
 Configure a meta interna em `merenda.gestao.meta-execucao-percentual` (padrão 80, entre 0 e 100).
 Ela mede autorizações de consumo / refeições planejadas, não aceitação sensorial nem desperdício
-medido. Repetições e alunos únicos são separados por dia/turno. O percentual pode superar 100;
+medido. Repetições e alunos únicos são separados por dia e refeição. O percentual pode superar 100;
 quando o planejamento é zero, o indicador é não avaliável, não zero.
 
 O ranking inicial é de **execução registrada de itens**, com no mínimo 5 planejamentos.
@@ -495,9 +529,18 @@ O relatório continua com as informações disponíveis. A fila não depende des
 Respostas de IA são validadas estruturalmente (campos e classificações); isso não garante
 veracidade da narrativa. Números do dashboard nunca vêm da resposta do LLM.
 
+### Dados antigos e mapeamento do legado
+
+A base local de demonstração é recriada, então a demonstração não depende disto; as migrations só deixam válido o banco de quem já tinha dados.
+
+- Cardápios, consumos (auditoria), fechamentos e relatórios que só tinham turno recebem a refeição pelo turno antigo: `MANHA` vira Lanche da manhã, `TARDE` Lanche da tarde, `NOITE` Lanche da noite e `INTEGRAL` Almoço.
+- O histórico sintético do legado (`historico_consumo.refeicao`, texto) é mapeado pelo prefixo do nome: Café da manhã, Lanche da manhã, Almoço e Lanche da tarde. O que não casa (frutas, turno estendido, "manhã e tarde") fica sem refeição e fora da análise por refeição; a quantidade aparece como aviso em `avisos` dos indicadores.
+- Relatórios antigos continuam abrindo como fotografia do momento: a resposta traz o `turno` antigo (`relatorio_ia.turno`) e a refeição mapeada, para entrarem na listagem por data e refeição.
+- Em bases antigas, o histórico de Almoço mapeado do `INTEGRAL` não tem consumo, porque a fila antiga nunca resolveu `INTEGRAL`; a análise do Almoço considera só os dias com consumo.
+
 ## Turmas e enturmação
 
-- `Turma` é entidade própria (código, descrição, turno, capacidade). `Aluno` não tem mais o
+- `Turma` é entidade própria (código, descrição, turno, capacidade). O turno da turma define o regime e, com ele, as refeições a que os alunos têm direito. `Aluno` não tem mais o
   campo `turma`; o vínculo é `Enturmacao`, com `dataInicio` e `dataFim` (nula = vigente).
 - A migration **V10** cria `turma` e `enturmacao`, remove `aluno.turma` e adiciona
   `turma_id`/`turma_nome` em `auditoria_consumo`. **A V10 não preenche o carimbo das linhas de
@@ -510,7 +553,7 @@ veracidade da narrativa. Números do dashboard nunca vêm da resposta do LLM.
   turma atual do aluno: transferir um aluno não reescreve o passado.
 - Consumo de aluno sem enturmação vigente na data cai no balde **"Sem turma"**, que entra
   normalmente na soma de Atendimentos.
-- O `DadosDemonstracaoLoader` semeia 9 turmas (1A a 9A) e enturma os alunos de demonstração antes
+- O `DadosDemonstracaoLoader` semeia 9 turmas (1A a 3A da manhã, 4A a 6A da tarde e 7A a 9A integrais) e enturma os alunos de demonstração antes
   de gerar o consumo.
 
 As rotas de alunos e turmas estão em [Endpoints REST](#endpoints-rest). Na transferência
@@ -529,7 +572,7 @@ turma de destino recebe 409.
 - O backend reconfirma as datas no banco e não aceita datas parciais para compor os indicadores.
 - Alterações no fechamento podem modificar indicadores e relatórios futuros; relatórios já persistidos permanecem como fotografia do momento da geração.
 
-Os indicadores operacionais do dashboard usam o dia e turno de referência. Aceitação e desperdício
+Os indicadores operacionais do dashboard usam o dia e a refeição de referência. Aceitação e desperdício
 usam os fechamentos históricos do escopo selecionado. Autorizações da fila não comprovam presença,
 ingestão, aceitação ou desperdício.
 
@@ -590,8 +633,7 @@ JAVA_HOME=/caminho/para/jdk-25 mvn -B test -Dtest=ValidacaoConsumoServiceTest
 - Não há prova de vida: foto de foto passa. A merenda é supervisionada e isso é aceito; sem supervisão
   não seria. A busca percorre todos os cadastrados, porque não existe entidade escola. A calibração
   foi feita com adultos do LFW, não com crianças.
-- A fila não resolve `INTEGRAL` e bloqueia das 23h à meia-noite (`FORA_DO_TURNO`). Consumo `INTEGRAL`
-  só existe nos dados de demonstração.
+- A grade de refeições é única (o protótipo tem uma escola só), vem pronta da migration `V14` e é editada pela tela "Grade de refeições" (sem exclusão). Fora das janelas a fila bloqueia com `FORA_DO_HORARIO_DE_REFEICAO`. Contraturno com turma de outro período e cálculo nutricional (per capita do PNAE) ficaram de fora.
 - Não há autenticação nem autorização (o projeto não usa Spring Security): qualquer cliente que
   alcance a porta 8081 usa a API.
 - Escola única: medições e indicadores usam `merenda.medicao.escola-id` (padrão 1), e não existe
@@ -599,10 +641,10 @@ JAVA_HOME=/caminho/para/jdk-25 mvn -B test -Dtest=ValidacaoConsumoServiceTest
 
 ## Para saber mais
 
-- [DECISOES-TECNICAS.md](DECISOES-TECNICAS.md): o porquê das decisões (resiliência e fallback de IA, cadastro de cardápio, quem decide o número e quem redige, medição de sobra, identidade de item por id). A seção 8, "Identificação facial 1:N, supervisionada, no servidor", traz a correção sobre o `betha-bio-sdk`, a calibração do facial e o que faltaria para produção.
+- [DECISOES-TECNICAS.md](DECISOES-TECNICAS.md): o porquê das decisões (resiliência e fallback de IA, cadastro de cardápio, quem decide o número e quem redige, medição de sobra, identidade de item por id). A seção 9, "Refeição como unidade da fila e da análise", traz a grade, o regime pelo turno da turma, o relógio de demonstração e o mapeamento do legado. A seção 8, "Identificação facial 1:N, supervisionada, no servidor", traz a correção sobre o `betha-bio-sdk`, a calibração do facial e o que faltaria para produção.
 - [implementation_plan.md](implementation_plan.md): plano original, contratos REST e critérios de aceite. A seção "Identificação" e as fases refletem o facial 1:N.
 - [RETROSPECTIVA.md](RETROSPECTIVA.md): erros encontrados e corrigidos, acertos e dúvidas em aberto.
 - [docs/superpowers/BACKLOG.md](docs/superpowers/BACKLOG.md): próximas features levantadas.
-- [docs/superpowers/specs/](docs/superpowers/specs/): desenhos do fechamento de turno e de turma e aluno.
-- [docs/superpowers/plans/](docs/superpowers/plans/): plano de implementação de turma e aluno.
+- [docs/superpowers/specs/](docs/superpowers/specs/): desenhos do fechamento da refeição, de turma e aluno, da identificação facial e das refeições por turno.
+- [docs/superpowers/plans/](docs/superpowers/plans/): planos de implementação de turma e aluno, da identificação facial e das refeições por turno.
 - READMEs dos repositórios irmãos `front-merenda-escolar` e `analytics-merenda-escolar`.

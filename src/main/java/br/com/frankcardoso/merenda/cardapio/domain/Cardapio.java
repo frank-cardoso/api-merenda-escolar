@@ -1,10 +1,7 @@
 package br.com.frankcardoso.merenda.cardapio.domain;
 
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
@@ -20,9 +17,8 @@ public class Cardapio {
     @Column(nullable = false)
     private LocalDate data;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private Turno turno;
+    @Column(name = "tipo_refeicao_id", nullable = false)
+    private UUID tipoRefeicaoId;
 
     @Column(name = "nome_refeicao", nullable = false, length = 150)
     private String nomeRefeicao;
@@ -42,11 +38,11 @@ public class Cardapio {
     protected Cardapio() {
     }
 
-    public Cardapio(UUID id, LocalDate data, Turno turno, String nomeRefeicao, String descricao,
+    public Cardapio(UUID id, LocalDate data, UUID tipoRefeicaoId, String nomeRefeicao, String descricao,
                     String itensJson, int quantidadePlanejada, boolean ativo) {
         this.id = id;
         this.data = data;
-        this.turno = turno;
+        this.tipoRefeicaoId = tipoRefeicaoId;
         this.nomeRefeicao = nomeRefeicao;
         this.descricao = descricao;
         this.itensJson = itensJson;
@@ -54,11 +50,11 @@ public class Cardapio {
         this.ativo = ativo;
     }
 
-    public void atualizar(LocalDate data, Turno turno, String nomeRefeicao, String descricao,
+    public void atualizar(LocalDate data, UUID tipoRefeicaoId, String nomeRefeicao, String descricao,
                           String itensJson, int quantidadePlanejada) {
         exigirAtivo();
         this.data = data;
-        this.turno = turno;
+        this.tipoRefeicaoId = tipoRefeicaoId;
         this.nomeRefeicao = nomeRefeicao;
         this.descricao = descricao;
         this.itensJson = itensJson;
@@ -93,7 +89,7 @@ public class Cardapio {
 
     public UUID getId() { return id; }
     public LocalDate getData() { return data; }
-    public Turno getTurno() { return turno; }
+    public UUID getTipoRefeicaoId() { return tipoRefeicaoId; }
     public String getNomeRefeicao() { return nomeRefeicao; }
     public String getDescricao() { return descricao; }
     public String getItensJson() { return itensJson; }

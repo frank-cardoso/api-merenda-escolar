@@ -36,15 +36,15 @@ public class PythonIndicadoresLogisticosAdapter implements IndicadoresLogisticos
     public IndicadoresLogisticos calcular(IndicadoresLogisticosInput input) {
         var result = client.post().uri("/api/v1/indicadores-logisticos").body(input)
             .retrieve().body(IndicadoresLogisticos.class);
-        if (result == null || !"4".equals(result.schemaVersion())
+        if (result == null || !"6".equals(result.schemaVersion())
             || !"DISPONIVEL".equals(result.status()) || result.execucaoPlanejamento() == null
             || result.atendimentos() == null || result.topComidas() == null
             || result.aceitacaoItens() == null || result.aceitacaoItensSemana() == null
             || result.porTurma() == null
-            || result.avisos() == null
+            || result.avisos() == null || result.planoDeAcao() == null
             || result.aceitacao() == null || result.desperdicio() == null
             || result.ingredientes() == null || !input.dataReferencia().equals(result.dataReferencia())
-            || input.turno() != result.turno()) {
+            || result.refeicao() == null || !input.refeicao().id().equals(result.refeicao().id())) {
             throw new IllegalStateException("Resposta inválida do serviço de indicadores");
         }
         return result;

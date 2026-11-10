@@ -2,9 +2,9 @@ package br.com.frankcardoso.merenda.gestao.application;
 
 import br.com.frankcardoso.merenda.cardapio.domain.Cardapio;
 import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.gestao.api.CardapioAnaliseResponse;
 import br.com.frankcardoso.merenda.medicao.infrastructure.MedicaoSobraRepository;
+import br.com.frankcardoso.merenda.refeicao.application.GradeRefeicoesService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,18 +24,23 @@ public class CardapioAnaliseService {
 
     private final CardapioRepository cardapios;
     private final MedicaoSobraRepository medicoes;
+    private final GradeRefeicoesService grade;
     private final ObjectMapper objectMapper;
 
     public CardapioAnaliseService(CardapioRepository cardapios, MedicaoSobraRepository medicoes,
-        ObjectMapper objectMapper) {
+        GradeRefeicoesService grade, ObjectMapper objectMapper) {
         this.cardapios = cardapios;
         this.medicoes = medicoes;
+        this.grade = grade;
         this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
-    public List<CardapioAnaliseResponse> listar(LocalDate inicio, LocalDate fim, Turno turno) {
-        var grupos = cardapios.findAllByDataBetweenAndTurnoAndAtivoTrueOrderByDataAsc(inicio, fim, turno)
+    public List<CardapioAnaliseResponse> listar(LocalDate inicio, LocalDate fim, UUID tipoRefeicaoId) {
+        // Refeição fora da grade é 404, não uma lista vazia.
+        grade.buscar(tipoRefeicaoId);
+        var grupos = cardapios.findAllByDataBetweenAndTipoRefeicaoIdAndAtivoTrueOrderByDataAsc(
+                inicio, fim, tipoRefeicaoId)
             .stream().map(this::ler).filter(item -> !item.itens().isEmpty())
             .collect(Collectors.groupingBy(this::chave, LinkedHashMap::new,
                 Collectors.toList()));
@@ -45,7 +50,7 @@ public class CardapioAnaliseService {
             var primeiro = ocorrencias.get(0);
             var datas = ocorrencias.stream().map(Ocorrencia::data).toList();
             var datasFechamento = primeiro.analisavel()
-                ? medicoes.datasComFechamentoCompleto(datas, turno,
+                ? medicoes.datasComFechamentoCompleto(datas, tipoRefeicaoId,
                     primeiro.receitas(), primeiro.receitas().size())
                 : List.<LocalDate>of();
             return new CardapioAnaliseResponse(

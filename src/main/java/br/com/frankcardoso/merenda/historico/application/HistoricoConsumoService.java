@@ -1,6 +1,5 @@
 package br.com.frankcardoso.merenda.historico.application;
 
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.historico.api.ItemHistorico;
 import br.com.frankcardoso.merenda.historico.api.SerieItemHistorico;
 import br.com.frankcardoso.merenda.historico.infrastructure.HistoricoConsumoRepository;
@@ -45,9 +44,9 @@ public class HistoricoConsumoService {
      * para isso existe {@link #itensDoCardapioComTaxa}.
      */
     @Transactional(readOnly = true)
-    public List<ItemHistorico> rankingDosPioresItens(LocalDate dataReferencia, Turno turno) {
+    public List<ItemHistorico> rankingDosPioresItens(LocalDate dataReferencia, UUID tipoRefeicaoId) {
         return repository.taxaPorItem(
-                turno,
+                tipoRefeicaoId,
                 dataReferencia.minusDays(JANELA_DE_ITENS_EM_DIAS),
                 dataReferencia,
                 MINIMO_OCORRENCIAS_POR_ITEM,
@@ -59,11 +58,11 @@ public class HistoricoConsumoService {
 
     /** Taxa historica de execucao das receitas do cardapio do dia. */
     @Transactional(readOnly = true)
-    public List<ItemHistorico> itensDoCardapioComTaxa(LocalDate dataReferencia, Turno turno,
+    public List<ItemHistorico> itensDoCardapioComTaxa(LocalDate dataReferencia, UUID tipoRefeicaoId,
                                                        List<UUID> receitasDoCardapio) {
         if (receitasDoCardapio.isEmpty()) return List.of();
 
-        return repository.taxaPorReceitas(turno, dataReferencia, receitasDoCardapio).stream()
+        return repository.taxaPorReceitas(tipoRefeicaoId, dataReferencia, receitasDoCardapio).stream()
             .map(this::paraItem)
             .toList();
     }
@@ -73,11 +72,11 @@ public class HistoricoConsumoService {
      * no servico Python.
      */
     @Transactional(readOnly = true)
-    public List<SerieItemHistorico> serieDiariaDosItens(LocalDate dataReferencia, Turno turno,
+    public List<SerieItemHistorico> serieDiariaDosItens(LocalDate dataReferencia, UUID tipoRefeicaoId,
                                                         List<UUID> receitas) {
         if (receitas.isEmpty()) return List.of();
 
-        return repository.serieDiariaPorReceita(turno, dataReferencia, receitas).stream()
+        return repository.serieDiariaPorReceita(tipoRefeicaoId, dataReferencia, receitas).stream()
             .collect(Collectors.groupingBy(
                 HistoricoConsumoRepository.ItemDiaAgregado::getReceitaId,
                 LinkedHashMap::new,

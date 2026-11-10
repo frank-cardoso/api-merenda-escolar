@@ -2,7 +2,6 @@ package br.com.frankcardoso.merenda.gestao.application;
 
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticos;
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticosPort;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -21,25 +20,25 @@ public class IndicadoresLogisticosService {
         this.port = port;
     }
 
-    public IndicadoresLogisticos calcular(LocalDate data, Turno turno) {
-        return calcular(data, turno, List.of());
+    public IndicadoresLogisticos calcular(LocalDate data, UUID tipoRefeicaoId) {
+        return calcular(data, tipoRefeicaoId, List.of());
     }
 
-    public IndicadoresLogisticos calcular(LocalDate data, Turno turno, List<UUID> receitasSelecionadas) {
-        return calcular(data, turno, receitasSelecionadas, List.of());
+    public IndicadoresLogisticos calcular(LocalDate data, UUID tipoRefeicaoId, List<UUID> receitasSelecionadas) {
+        return calcular(data, tipoRefeicaoId, receitasSelecionadas, List.of());
     }
 
-    public IndicadoresLogisticos calcular(LocalDate data, Turno turno,
+    public IndicadoresLogisticos calcular(LocalDate data, UUID tipoRefeicaoId,
         List<UUID> receitasSelecionadas, List<LocalDate> datasSelecionadas) {
         var input = receitasSelecionadas.isEmpty() && datasSelecionadas.isEmpty()
-            ? dados.preparar(data, turno)
-            : dados.preparar(data, turno, receitasSelecionadas, datasSelecionadas);
+            ? dados.preparar(data, tipoRefeicaoId)
+            : dados.preparar(data, tipoRefeicaoId, receitasSelecionadas, datasSelecionadas);
         try {
             return port.calcular(input);
         } catch (RuntimeException exception) {
-            LOG.warn("Indicadores indisponíveis para {} / {}: {}", data, turno,
+            LOG.warn("Indicadores indisponíveis para {} / {}: {}", data, input.refeicao().nome(),
                 exception.getClass().getSimpleName());
-            return IndicadoresLogisticos.indisponivel(data, turno);
+            return IndicadoresLogisticos.indisponivel(data, input.refeicao());
         }
     }
 }

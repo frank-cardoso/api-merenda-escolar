@@ -21,6 +21,7 @@ import csv
 import math
 import random
 import sys
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -32,12 +33,23 @@ from pathlib import Path
 NAMESPACE_MERENDA = uuid.UUID("6f1b4c2e-0a3d-5e7f-9b1c-2d4e6f8a0b2c")
 
 
+def chave_do_id(nome: str) -> str:
+    """Os ids foram publicados quando os nomes ainda nao tinham acento ("Maca", "Couve flor").
+
+    Derivar do nome acentuado trocaria todos os ids e quebraria as bases ja carregadas, que
+    referenciam receita e ingrediente por FK. Por isso o uuid5 sai do nome sem acento e sem hifen.
+    """
+    sem_acento = unicodedata.normalize("NFD", nome)
+    sem_acento = "".join(c for c in sem_acento if not unicodedata.combining(c))
+    return sem_acento.replace("-", " ")
+
+
 def id_receita(nome: str) -> str:
-    return str(uuid.uuid5(NAMESPACE_MERENDA, "receita:" + nome))
+    return str(uuid.uuid5(NAMESPACE_MERENDA, "receita:" + chave_do_id(nome)))
 
 
 def id_ingrediente(nome: str) -> str:
-    return str(uuid.uuid5(NAMESPACE_MERENDA, "ingrediente:" + nome))
+    return str(uuid.uuid5(NAMESPACE_MERENDA, "ingrediente:" + chave_do_id(nome)))
 
 
 # ---------------------------------------------------------------------------
@@ -107,41 +119,41 @@ REFEICOES = [
 ITENS_MEDIDOS = [
     # (item, taxa de execucao medida)
     ("Carne de panela com batata", 0.000),
-    ("Pure de mandioca", 0.021),
+    ("Purê de mandioca", 0.021),
     ("Couve com farofa", 0.022),
     ("Mandioca cozida", 0.024),
-    ("Molho de carne moida", 0.035),
-    ("Pure de batata", 0.036),
+    ("Molho de carne moída", 0.035),
+    ("Purê de batata", 0.036),
     ("Polenta cozida", 0.036),
     ("Beterraba cozida", 0.048),
     ("Ovo cozido", 0.048),
     ("Cenoura ralada", 0.050),
     ("Iscas de frango acebolada", 0.050),
-    ("Carne moida tipo pastel", 0.053),
+    ("Carne moída tipo pastel", 0.053),
     ("Molho de frango desfiado", 0.054),
     ("Cenoura refogada", 0.057),
-    ("Brocolis", 0.058),
+    ("Brócolis", 0.058),
     ("Salada de tomate", 0.058),
     ("Coxa e sobrecoxa de frango ao molho de tomate", 0.061),
     ("Chuchu", 0.063),
     ("Carne de panela", 0.066),
-    ("Requeijao caseiro", 0.067),
+    ("Requeijão caseiro", 0.067),
     ("Frango dourado, acebolado", 0.069),
-    ("Couve flor", 0.069),
+    ("Couve-flor", 0.069),
     ("Salada de alface", 0.072),
     ("Beterraba ralada", 0.072),
     ("Repolho", 0.077),
     ("Arroz com galinha", 0.077),
     ("Molho de tomate caseiro", 0.078),
     ("Chuchu com tempero verde", 0.084),
-    ("Carne suina acebolada", 0.085),
+    ("Carne suína acebolada", 0.085),
     ("Cenoura cozida", 0.086),
     ("Ensopado de mandioca", 0.086),
     ("Couve", 0.094),
-    ("Pure de moranga", 0.100),
+    ("Purê de moranga", 0.100),
     ("Guisado com moranga", 0.102),
     ("Ovo mexido", 0.121),
-    ("Bolo de maca, sem acucar", 0.123),
+    ("Bolo de maçã, sem açúcar", 0.123),
 ]
 
 # Itens de alta execucao — CALIBRADOS, nao medidos (ver nota em ITENS_MEDIDOS).
@@ -152,12 +164,12 @@ ITENS_MEDIDOS = [
 # apenas 20) — e os itens medidos, todos de baixa execucao, sao os menos frequentes.
 ITENS_CALIBRADOS = [
     "Arroz branco",
-    "Feijao carioca",
-    "Pao com manteiga",
+    "Feijão carioca",
+    "Pão com manteiga",
     "Leite com achocolatado",
     "Banana",
-    "Maca",
-    "Macarrao ao sugo",
+    "Maçã",
+    "Macarrão ao sugo",
     "Sopa de legumes",
     "Bolacha doce",
     "Suco de fruta natural",
@@ -184,12 +196,12 @@ ESCOLA_DO_PROTOTIPO = 1
 # rejeitam mais. Sem essa coerencia, item com taxa de execucao baixa apareceria com resto baixo
 # e os dois sinais se contradiriam dentro do mesmo payload.
 REJEICAO_POR_INGREDIENTE = {
-    "couve": 0.34, "beterraba": 0.32, "chuchu": 0.30, "moranga": 0.29, "couve flor": 0.28,
-    "repolho": 0.26, "brocolis": 0.24, "alface": 0.23, "cebolinha": 0.18, "mandioca": 0.17,
-    "cenoura": 0.16, "tomate": 0.14, "ovo": 0.13, "fuba": 0.12, "carne suina": 0.12,
-    "batata": 0.10, "feijao": 0.09, "carne bovina": 0.09, "farinha de mandioca": 0.09,
+    "couve": 0.34, "beterraba": 0.32, "chuchu": 0.30, "moranga": 0.29, "couve-flor": 0.28,
+    "repolho": 0.26, "brócolis": 0.24, "alface": 0.23, "cebolinha": 0.18, "mandioca": 0.17,
+    "cenoura": 0.16, "tomate": 0.14, "ovo": 0.13, "fubá": 0.12, "carne suína": 0.12,
+    "batata": 0.10, "feijão": 0.09, "carne bovina": 0.09, "farinha de mandioca": 0.09,
     "cebola": 0.08, "arroz": 0.07, "frango": 0.07, "leite": 0.06, "manteiga": 0.06,
-    "trigo": 0.05, "fruta": 0.05, "maca": 0.05, "banana": 0.04, "cacau": 0.03, "acucar": 0.03,
+    "trigo": 0.05, "fruta": 0.05, "maçã": 0.05, "banana": 0.04, "cacau": 0.03, "açúcar": 0.03,
 }
 REJEICAO_PADRAO = 0.12
 
@@ -553,7 +565,7 @@ def relatar(registros: list[Registro], taxa_alta: float) -> None:
 def escrever_csv(registros: list[Registro], destino: Path) -> None:
     """Escreve em TSV, nao CSV.
 
-    Varios nomes reais contem virgula ("Bolo de maca, sem acucar", "Lanche da tarde, menores
+    Varios nomes reais contem virgula ("Bolo de maçã, sem açúcar", "Lanche da tarde, menores
     de um ano"). Com tabulacao o leitor do lado Java pode fazer split simples, sem precisar de
     um parser de campos com aspas.
     """

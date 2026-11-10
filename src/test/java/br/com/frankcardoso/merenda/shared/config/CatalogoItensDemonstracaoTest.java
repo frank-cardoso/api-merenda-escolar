@@ -30,7 +30,7 @@ class CatalogoItensDemonstracaoTest {
 
         assertThat(catalogo.cardapioPrincipal(new Random(2026)).itens())
             .extracting(CatalogoItensDemonstracao.Item::nome)
-            .containsExactlyInAnyOrder("Arroz branco", "Macarrao ao sugo",
-                "Leite com achocolatado", "Cuscuz", "Maca");
+            .containsExactlyInAnyOrder("Arroz branco", "Macarrão ao sugo",
+                "Leite com achocolatado", "Beterraba cozida", "Chuchu");
     }
 }

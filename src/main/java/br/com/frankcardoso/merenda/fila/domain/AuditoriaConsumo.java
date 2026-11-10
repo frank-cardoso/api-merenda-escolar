@@ -35,9 +35,11 @@ public class AuditoriaConsumo {
     @Column(name = "data_operacional", nullable = false)
     private LocalDate dataOperacional;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private Turno turno;
+    @Column(name = "tipo_refeicao_id", nullable = false)
+    private UUID tipoRefeicaoId;
+
+    @Column(name = "refeicao_nome", length = 60)
+    private String refeicaoNome;
 
     @Column(nullable = false)
     private Instant instante;
@@ -69,14 +71,16 @@ public class AuditoriaConsumo {
     }
 
     public AuditoriaConsumo(UUID id, Aluno aluno, Cardapio cardapio, LocalDate dataOperacional,
-                            Turno turno, Instant instante, MetodoIdentificacao metodoIdentificacao,
-                            ResultadoConsumo resultado, String motivo, UUID correlationId,
-                            String chaveConsumoAutorizado, UUID turmaId, String turmaNome) {
+                            UUID tipoRefeicaoId, String refeicaoNome, Instant instante,
+                            MetodoIdentificacao metodoIdentificacao, ResultadoConsumo resultado,
+                            String motivo, UUID correlationId, String chaveConsumoAutorizado,
+                            UUID turmaId, String turmaNome) {
         this.id = id;
         this.aluno = aluno;
         this.cardapio = cardapio;
         this.dataOperacional = dataOperacional;
-        this.turno = turno;
+        this.tipoRefeicaoId = tipoRefeicaoId;
+        this.refeicaoNome = refeicaoNome;
         this.instante = instante;
         this.metodoIdentificacao = metodoIdentificacao;
         this.resultado = resultado;
@@ -85,6 +89,14 @@ public class AuditoriaConsumo {
         this.chaveConsumoAutorizado = chaveConsumoAutorizado;
         this.turmaId = turmaId;
         this.turmaNome = turmaNome;
+    }
+
+    public UUID getTipoRefeicaoId() {
+        return tipoRefeicaoId;
+    }
+
+    public String getRefeicaoNome() {
+        return refeicaoNome;
     }
 
     public Instant getInstante() {

@@ -10,6 +10,10 @@ import br.com.frankcardoso.merenda.cardapio.application.ReceitaDesconhecidaExcep
 import br.com.frankcardoso.merenda.gestao.application.CardapioNaoEncontradoException;
 import br.com.frankcardoso.merenda.medicao.domain.MedicaoSobraInconsistenteException;
 import br.com.frankcardoso.merenda.relatorio.application.AmostraInsuficienteParaAnaliseException;
+import br.com.frankcardoso.merenda.refeicao.application.JanelaDeRefeicaoInvalidaException;
+import br.com.frankcardoso.merenda.refeicao.application.NomeDeRefeicaoDuplicadoException;
+import br.com.frankcardoso.merenda.refeicao.application.TipoRefeicaoNaoEncontradoException;
+import br.com.frankcardoso.merenda.refeicao.domain.GradeRefeicoesInvalidaException;
 import br.com.frankcardoso.merenda.relatorio.application.RelatorioNaoEncontradoException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -25,7 +29,8 @@ public class RestExceptionHandler {
     @ExceptionHandler({
         CardapioNaoEncontradoException.class,
         CardapioNaoEncontradoPorIdException.class,
-        RelatorioNaoEncontradoException.class
+        RelatorioNaoEncontradoException.class,
+        TipoRefeicaoNaoEncontradoException.class
     })
     ProblemDetail tratarNaoEncontrado(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.NOT_FOUND, "Recurso nao encontrado", exception.getMessage(), request);
@@ -36,7 +41,8 @@ public class RestExceptionHandler {
         return problema(HttpStatus.NOT_FOUND, "Recurso nao encontrado", exception.getMessage(), request);
     }
 
-    @ExceptionHandler({CardapioDuplicadoException.class, ConflitoCadastroException.class})
+    @ExceptionHandler({CardapioDuplicadoException.class, ConflitoCadastroException.class,
+        NomeDeRefeicaoDuplicadoException.class})
     ProblemDetail tratarConflito(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.CONFLICT, "Conflito", exception.getMessage(), request);
     }
@@ -46,6 +52,11 @@ public class RestExceptionHandler {
         RostoNaoDetectadoException.class, MultiplosRostosDetectadosException.class})
     ProblemDetail tratarEntradaInvalida(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.BAD_REQUEST, "Requisicao invalida", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler({GradeRefeicoesInvalidaException.class, JanelaDeRefeicaoInvalidaException.class})
+    ProblemDetail tratarGradeInvalida(RuntimeException exception, HttpServletRequest request) {
+        return problema(HttpStatus.UNPROCESSABLE_ENTITY, "Grade de refeicoes invalida", exception.getMessage(), request);
     }
 
     @ExceptionHandler(AmostraInsuficienteParaAnaliseException.class)

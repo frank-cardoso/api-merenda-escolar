@@ -1,10 +1,10 @@
 package br.com.frankcardoso.merenda.gestao.api;
 
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.gestao.application.ConsolidacaoConsumoService;
 import br.com.frankcardoso.merenda.gestao.application.CardapioAnaliseService;
 import java.util.List;
 import java.time.LocalDate;
+import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,17 +26,17 @@ public class GestaoController {
     @GetMapping("/consolidacoes")
     ConsolidacaoConsumoResponse consolidar(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
-        @RequestParam Turno turno
+        @RequestParam UUID tipoRefeicaoId
     ) {
-        return service.consolidar(data, turno);
+        return service.consolidar(data, tipoRefeicaoId);
     }
 
     @GetMapping("/cardapios-analise")
     List<CardapioAnaliseResponse> cardapiosParaAnalise(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate inicio,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim,
-        @RequestParam Turno turno
+        @RequestParam UUID tipoRefeicaoId
     ) {
-        return cardapioAnaliseService.listar(inicio, fim, turno);
+        return cardapioAnaliseService.listar(inicio, fim, tipoRefeicaoId);
     }
 }

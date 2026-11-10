@@ -2,8 +2,7 @@ param(
     [string] $ApiBaseUrl = "http://localhost:8081",
     [string] $RelatorioId,
     [string] $DataReferencia = (Get-Date -Format "yyyy-MM-dd"),
-    [ValidateSet("MANHA", "TARDE", "NOITE")]
-    [string] $Turno = "NOITE",
+    [string] $TipoRefeicaoId = "5e1a0000-0000-4000-8000-000000000002",
     [int] $TimeoutSeconds = 60,
     [int] $PollIntervalSeconds = 2,
     [switch] $PassThru
@@ -54,7 +53,7 @@ if ([string]::IsNullOrWhiteSpace($RelatorioId)) {
         -Method POST `
         -Body @{
             dataReferencia = $DataReferencia
-            turno = $Turno
+            tipoRefeicaoId = $TipoRefeicaoId
         }
 
     $RelatorioId = $criacao.relatorioId

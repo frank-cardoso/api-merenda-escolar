@@ -59,7 +59,7 @@ public class PythonPrevisaoConsumoAdapter implements PrevisaoConsumoPort {
 
     private record PythonPrevisaoConsumoRequest(
         String dataReferencia,
-        String turno,
+        String refeicao,
         String cardapio,
         int quantidadePlanejada,
         long consumosAutorizados,
@@ -72,7 +72,7 @@ public class PythonPrevisaoConsumoAdapter implements PrevisaoConsumoPort {
         private static PythonPrevisaoConsumoRequest from(PrevisaoConsumoInput input) {
             return new PythonPrevisaoConsumoRequest(
                 input.dataReferencia().toString(),
-                input.turno().name(),
+                input.refeicao(),
                 input.cardapio(),
                 input.quantidadePlanejada(),
                 input.consumosAutorizados(),

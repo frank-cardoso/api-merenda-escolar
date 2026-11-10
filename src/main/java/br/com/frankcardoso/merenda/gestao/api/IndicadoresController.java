@@ -1,7 +1,6 @@
 package br.com.frankcardoso.merenda.gestao.api;
 
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticos;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.gestao.application.IndicadoresLogisticosService;
 import java.time.LocalDate;
 import java.util.List;
@@ -19,10 +18,10 @@ public class IndicadoresController {
     @GetMapping
     public IndicadoresLogisticos consultar(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
-        @RequestParam Turno turno,
+        @RequestParam UUID tipoRefeicaoId,
         @RequestParam(required = false) List<UUID> receitaIds,
         @RequestParam(required = false) List<LocalDate> datas) {
-        return service.calcular(data, turno, receitaIds == null ? List.of() : receitaIds,
+        return service.calcular(data, tipoRefeicaoId, receitaIds == null ? List.of() : receitaIds,
             datas == null ? List.of() : datas);
     }
 }

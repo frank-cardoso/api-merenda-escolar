@@ -2,9 +2,9 @@ package br.com.frankcardoso.merenda.gestao.application;
 
 import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
 import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.gestao.api.ConsolidacaoConsumoResponse;
+import br.com.frankcardoso.merenda.refeicao.application.GradeRefeicoesService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,25 +25,29 @@ public class ConsolidacaoConsumoService {
 
     private final CardapioRepository cardapioRepository;
     private final AuditoriaConsumoRepository auditoriaRepository;
+    private final GradeRefeicoesService grade;
     private final ObjectMapper objectMapper;
 
     public ConsolidacaoConsumoService(CardapioRepository cardapioRepository,
                                       AuditoriaConsumoRepository auditoriaRepository,
+                                      GradeRefeicoesService grade,
                                       ObjectMapper objectMapper) {
         this.cardapioRepository = cardapioRepository;
         this.auditoriaRepository = auditoriaRepository;
+        this.grade = grade;
         this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
-    public ConsolidacaoConsumoResponse consolidar(LocalDate data, Turno turno) {
-        var cardapio = cardapioRepository.findByDataAndTurnoAndAtivoTrue(data, turno)
-            .orElseThrow(() -> new CardapioNaoEncontradoException(data, turno));
+    public ConsolidacaoConsumoResponse consolidar(LocalDate data, UUID tipoRefeicaoId) {
+        var refeicao = grade.buscar(tipoRefeicaoId);
+        var cardapio = cardapioRepository.findByDataAndTipoRefeicaoIdAndAtivoTrue(data, tipoRefeicaoId)
+            .orElseThrow(() -> new CardapioNaoEncontradoException(data, refeicao.getNome()));
 
-        long autorizados = auditoriaRepository.countByDataOperacionalAndTurnoAndResultado(
-            data, turno, ResultadoConsumo.AUTORIZADO);
-        long bloqueados = auditoriaRepository.countByDataOperacionalAndTurnoAndResultado(
-            data, turno, ResultadoConsumo.BLOQUEADO);
+        long autorizados = auditoriaRepository.countByDataOperacionalAndTipoRefeicaoIdAndResultado(
+            data, tipoRefeicaoId, ResultadoConsumo.AUTORIZADO);
+        long bloqueados = auditoriaRepository.countByDataOperacionalAndTipoRefeicaoIdAndResultado(
+            data, tipoRefeicaoId, ResultadoConsumo.BLOQUEADO);
         long sobra = Math.max(0, cardapio.getQuantidadePlanejada() - autorizados);
         BigDecimal taxa = calcularTaxa(autorizados, cardapio.getQuantidadePlanejada());
 
@@ -51,7 +55,8 @@ public class ConsolidacaoConsumoService {
 
         return new ConsolidacaoConsumoResponse(
             data,
-            turno,
+            tipoRefeicaoId,
+            refeicao.getNome(),
             cardapio.getId(),
             cardapio.getNomeRefeicao(),
             itens.stream().map(ItemCardapio::nome).toList(),
