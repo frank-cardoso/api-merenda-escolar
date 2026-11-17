@@ -7,9 +7,11 @@ import br.com.frankcardoso.merenda.aluno.infrastructure.AlunoRepository;
 import br.com.frankcardoso.merenda.cardapio.domain.Cardapio;
 import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
 import br.com.frankcardoso.merenda.fila.api.ValidarConsumoRequest;
+import br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo;
 import br.com.frankcardoso.merenda.fila.domain.MetodoIdentificacao;
 import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
 import br.com.frankcardoso.merenda.fila.domain.Turno;
+import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.refeicao.domain.RefeicaoPadrao;
 import br.com.frankcardoso.merenda.shared.config.ApplicationConfig;
 import br.com.frankcardoso.merenda.turma.domain.Enturmacao;
@@ -17,6 +19,7 @@ import br.com.frankcardoso.merenda.turma.domain.Turma;
 import br.com.frankcardoso.merenda.turma.infrastructure.EnturmacaoRepository;
 import br.com.frankcardoso.merenda.turma.infrastructure.TurmaRepository;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -47,6 +50,9 @@ class FilaPorRefeicaoIntegracaoTest {
     private CardapioRepository cardapios;
 
     @Autowired
+    private AuditoriaConsumoRepository auditorias;
+
+    @Autowired
     private Clock clock;
 
     @Test
@@ -54,8 +60,7 @@ class FilaPorRefeicaoIntegracaoTest {
         var hoje = LocalDate.ofInstant(clock.instant(), ApplicationConfig.ZONA_OPERACIONAL);
         enturmar("ALU-T01", "Aluno Integral", turma("T-INT", Turno.INTEGRAL), hoje);
         enturmar("ALU-T02", "Aluno Manhã", turma("T-MAN", Turno.MANHA), hoje);
-        cardapios.save(new Cardapio(UUID.randomUUID(), hoje, RefeicaoPadrao.ALMOCO.id(), "Arroz e feijão", null,
-            "[{\"nome\":\"Arroz\"}]", 100, true));
+        cardapioDoAlmoco(hoje);
 
         var integral = fila.validar(qrCode("ALU-T01"));
         var repetido = fila.validar(qrCode("ALU-T01"));
@@ -78,14 +83,37 @@ class FilaPorRefeicaoIntegracaoTest {
         assertThat(repetido.turnosDaRefeicao()).isNull();
     }
 
+    @Test
+    void consumoAutorizadoDepoisDoRelogioNaoBloqueiaAPassagem() {
+        // Base local guarda passagens de quando a API rodou com relógio adiante (hora real ou
+        // merenda.demo.horario mais tarde); para o relógio atual elas estão no futuro.
+        var hoje = LocalDate.ofInstant(clock.instant(), ApplicationConfig.ZONA_OPERACIONAL);
+        var aluno = enturmar("ALU-T03", "Aluno Futuro", turma("T-FUT", Turno.INTEGRAL), hoje);
+        var cardapio = cardapioDoAlmoco(hoje);
+        auditorias.save(new AuditoriaConsumo(UUID.randomUUID(), aluno, cardapio, hoje, RefeicaoPadrao.ALMOCO.id(),
+            "Almoço", clock.instant().plus(Duration.ofMinutes(5)), MetodoIdentificacao.QR_CODE,
+            ResultadoConsumo.AUTORIZADO, null, UUID.randomUUID(), null, null, null));
+
+        var resposta = fila.validar(qrCode("ALU-T03"));
+
+        assertThat(resposta.resultado()).isEqualTo(ResultadoConsumo.AUTORIZADO);
+    }
+
+    private Cardapio cardapioDoAlmoco(LocalDate dia) {
+        return cardapios.findByDataAndTipoRefeicaoIdAndAtivoTrue(dia, RefeicaoPadrao.ALMOCO.id())
+            .orElseGet(() -> cardapios.save(new Cardapio(UUID.randomUUID(), dia, RefeicaoPadrao.ALMOCO.id(),
+                "Arroz e feijão", null, "[{\"nome\":\"Arroz\"}]", 100, true)));
+    }
+
     private Turma turma(String codigo, Turno turno) {
         return turmas.save(new Turma(UUID.randomUUID(), codigo, "Turma " + codigo, turno, 30, null,
             clock.instant()));
     }
 
-    private void enturmar(String codigo, String nome, Turma turma, LocalDate desde) {
+    private Aluno enturmar(String codigo, String nome, Turma turma, LocalDate desde) {
         var aluno = alunos.save(new Aluno(UUID.randomUUID(), codigo, codigo, nome, true, null, clock.instant()));
         enturmacoes.save(new Enturmacao(UUID.randomUUID(), aluno, turma, desde, null, null));
+        return aluno;
     }
 
     private static ValidarConsumoRequest qrCode(String codigo) {

@@ -33,12 +33,13 @@ public interface AuditoriaConsumoRepository extends JpaRepository<AuditoriaConsu
 
     boolean existsByTurmaId(UUID turmaId);
 
-    boolean existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteGreaterThanEqual(
+    boolean existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteBetween(
         UUID alunoId,
         LocalDate dataOperacional,
         UUID tipoRefeicaoId,
         ResultadoConsumo resultado,
-        Instant instante
+        Instant inicio,
+        Instant fim
     );
 
     long countByDataOperacionalAndTipoRefeicaoIdAndResultado(

@@ -118,11 +118,12 @@ class ValidacaoConsumoServiceTest {
         assertThat(noAlmoco.resultado()).isEqualTo(ResultadoConsumo.AUTORIZADO);
         assertThat(noAlmoco.refeicao()).isEqualTo("Almoço");
         var ordem = inOrder(auditoriaRepository);
-        ordem.verify(auditoriaRepository).existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteGreaterThanEqual(
+        ordem.verify(auditoriaRepository).existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteBetween(
             aluno.getId(), DATA_OPERACIONAL, cafe, ResultadoConsumo.AUTORIZADO,
-            instante("07:10").minus(Duration.ofMinutes(2)));
-        ordem.verify(auditoriaRepository).existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteGreaterThanEqual(
-            aluno.getId(), DATA_OPERACIONAL, ALMOCO, ResultadoConsumo.AUTORIZADO, AGORA.minus(Duration.ofMinutes(2)));
+            instante("07:10").minus(Duration.ofMinutes(2)), instante("07:10"));
+        ordem.verify(auditoriaRepository).existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteBetween(
+            aluno.getId(), DATA_OPERACIONAL, ALMOCO, ResultadoConsumo.AUTORIZADO, AGORA.minus(Duration.ofMinutes(2)),
+            AGORA);
     }
 
     @Test
@@ -161,9 +162,9 @@ class ValidacaoConsumoServiceTest {
     @Test
     void repeticaoNaMesmaRefeicaoDentroDaJanelaBloqueia() {
         configurarAlunoECardapio(turmaIntegral);
-        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteGreaterThanEqual(
-            aluno.getId(), DATA_OPERACIONAL, ALMOCO, ResultadoConsumo.AUTORIZADO, AGORA.minus(Duration.ofMinutes(2))
-        )).thenReturn(true);
+        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteBetween(
+            aluno.getId(), DATA_OPERACIONAL, ALMOCO, ResultadoConsumo.AUTORIZADO,
+            AGORA.minus(Duration.ofMinutes(2)), AGORA)).thenReturn(true);
 
         var resposta = service.validar(qrCode());
 
@@ -180,9 +181,9 @@ class ValidacaoConsumoServiceTest {
     @Test
     void repeticaoNaMesmaRefeicaoDepoisDaJanelaAutoriza() {
         configurarAlunoECardapio(turmaIntegral);
-        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteGreaterThanEqual(
-            aluno.getId(), DATA_OPERACIONAL, ALMOCO, ResultadoConsumo.AUTORIZADO, AGORA.minus(Duration.ofMinutes(2))
-        )).thenReturn(false);
+        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteBetween(
+            aluno.getId(), DATA_OPERACIONAL, ALMOCO, ResultadoConsumo.AUTORIZADO,
+            AGORA.minus(Duration.ofMinutes(2)), AGORA)).thenReturn(false);
 
         var resposta = service.validar(qrCode());
 
@@ -306,9 +307,9 @@ class ValidacaoConsumoServiceTest {
     @Test
     void carimbaTurmaTambemNoBloqueio() {
         configurarAlunoECardapio(turmaIntegral);
-        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteGreaterThanEqual(
+        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteBetween(
             aluno.getId(), DATA_OPERACIONAL, ALMOCO, ResultadoConsumo.AUTORIZADO,
-            AGORA.minus(Duration.ofMinutes(2)))).thenReturn(true);
+            AGORA.minus(Duration.ofMinutes(2)), AGORA)).thenReturn(true);
 
         service.validar(qrCode());
 
@@ -418,9 +419,9 @@ class ValidacaoConsumoServiceTest {
     void facialReconhecidoSegueBloqueioDeRepeticao() {
         var reconhecido = alunoReconhecido();
         configurarFacialReconhecido(reconhecido);
-        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteGreaterThanEqual(
+        when(auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteBetween(
             reconhecido.getId(), DATA_OPERACIONAL, ALMOCO, ResultadoConsumo.AUTORIZADO,
-            AGORA.minus(Duration.ofMinutes(2)))).thenReturn(true);
+            AGORA.minus(Duration.ofMinutes(2)), AGORA)).thenReturn(true);
 
         var resposta = service.validar(facial("foto-base64", null));
 

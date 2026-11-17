@@ -142,8 +142,10 @@ public class ValidacaoConsumoService {
         if (cardapio == null) return bloqueio(aluno, refeicao, null, "CARDAPIO_NAO_CONFIGURADO");
 
         var consumo = new Consumo(aluno, turma, refeicao, cardapio, data, agora, request);
-        if (auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteGreaterThanEqual(
-            aluno.getId(), data, refeicao.getId(), ResultadoConsumo.AUTORIZADO, agora.minus(bloqueioRepeticao))) {
+        // Com teto em "agora": passagem gravada adiante do relógio (base de outra execução com
+        // merenda.demo.horario) não pode prender o aluno até o relógio alcançá-la.
+        if (auditoriaRepository.existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteBetween(
+            aluno.getId(), data, refeicao.getId(), ResultadoConsumo.AUTORIZADO, agora.minus(bloqueioRepeticao), agora)) {
             auditoriaRepository.save(consumo.auditoria(ResultadoConsumo.BLOQUEADO, "CONSUMO_RECENTE_BLOQUEADO"));
             return bloqueio(aluno, refeicao, cardapio, "CONSUMO_RECENTE_BLOQUEADO");
         }
