@@ -1,11 +1,19 @@
 package br.com.frankcardoso.merenda.shared.web;
 
+import br.com.frankcardoso.merenda.biometria.domain.MultiplosRostosDetectadosException;
+import br.com.frankcardoso.merenda.biometria.domain.ReconhecimentoFacialIndisponivelException;
+import br.com.frankcardoso.merenda.biometria.domain.RostoNaoDetectadoException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioDataPassadaException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioDuplicadoException;
 import br.com.frankcardoso.merenda.cardapio.application.CardapioNaoEncontradoPorIdException;
 import br.com.frankcardoso.merenda.cardapio.application.ReceitaDesconhecidaException;
 import br.com.frankcardoso.merenda.gestao.application.CardapioNaoEncontradoException;
 import br.com.frankcardoso.merenda.medicao.domain.MedicaoSobraInconsistenteException;
+import br.com.frankcardoso.merenda.relatorio.application.AmostraInsuficienteParaAnaliseException;
+import br.com.frankcardoso.merenda.refeicao.application.JanelaDeRefeicaoInvalidaException;
+import br.com.frankcardoso.merenda.refeicao.application.NomeDeRefeicaoDuplicadoException;
+import br.com.frankcardoso.merenda.refeicao.application.TipoRefeicaoNaoEncontradoException;
+import br.com.frankcardoso.merenda.refeicao.domain.GradeRefeicoesInvalidaException;
 import br.com.frankcardoso.merenda.relatorio.application.RelatorioNaoEncontradoException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -21,21 +29,45 @@ public class RestExceptionHandler {
     @ExceptionHandler({
         CardapioNaoEncontradoException.class,
         CardapioNaoEncontradoPorIdException.class,
-        RelatorioNaoEncontradoException.class
+        RelatorioNaoEncontradoException.class,
+        TipoRefeicaoNaoEncontradoException.class
     })
     ProblemDetail tratarNaoEncontrado(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.NOT_FOUND, "Recurso nao encontrado", exception.getMessage(), request);
     }
 
-    @ExceptionHandler(CardapioDuplicadoException.class)
-    ProblemDetail tratarConflito(CardapioDuplicadoException exception, HttpServletRequest request) {
+    @ExceptionHandler(RecursoNaoEncontradoException.class)
+    ProblemDetail tratarCadastroNaoEncontrado(RecursoNaoEncontradoException exception, HttpServletRequest request) {
+        return problema(HttpStatus.NOT_FOUND, "Recurso nao encontrado", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler({CardapioDuplicadoException.class, ConflitoCadastroException.class,
+        NomeDeRefeicaoDuplicadoException.class})
+    ProblemDetail tratarConflito(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.CONFLICT, "Conflito", exception.getMessage(), request);
     }
 
     @ExceptionHandler({CardapioDataPassadaException.class, MedicaoSobraInconsistenteException.class,
-        ReceitaDesconhecidaException.class})
+        ReceitaDesconhecidaException.class, DadosInvalidosException.class,
+        RostoNaoDetectadoException.class, MultiplosRostosDetectadosException.class})
     ProblemDetail tratarEntradaInvalida(RuntimeException exception, HttpServletRequest request) {
         return problema(HttpStatus.BAD_REQUEST, "Requisicao invalida", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler({GradeRefeicoesInvalidaException.class, JanelaDeRefeicaoInvalidaException.class})
+    ProblemDetail tratarGradeInvalida(RuntimeException exception, HttpServletRequest request) {
+        return problema(HttpStatus.UNPROCESSABLE_ENTITY, "Grade de refeicoes invalida", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(AmostraInsuficienteParaAnaliseException.class)
+    ProblemDetail tratarAmostraInsuficiente(AmostraInsuficienteParaAnaliseException exception, HttpServletRequest request) {
+        return problema(HttpStatus.UNPROCESSABLE_ENTITY, "Amostra insuficiente", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(ReconhecimentoFacialIndisponivelException.class)
+    ProblemDetail tratarReconhecimentoIndisponivel(ReconhecimentoFacialIndisponivelException exception, HttpServletRequest request) {
+        return problema(HttpStatus.SERVICE_UNAVAILABLE, "Servico indisponivel",
+            "Reconhecimento facial indisponível no momento. Tente novamente em instantes.", request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

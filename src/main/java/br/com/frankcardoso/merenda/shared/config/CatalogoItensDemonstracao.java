@@ -73,8 +73,8 @@ public class CatalogoItensDemonstracao {
 
     /** Cardápio estável usado pela demonstração da análise de aceitação. */
     public Cardapio cardapioPrincipal(Random rng) {
-        var nomes = List.of("Arroz branco", "Macarrao ao sugo", "Leite com achocolatado",
-            "Cuscuz", "Maca");
+        var nomes = List.of("Arroz branco", "Macarrão ao sugo", "Leite com achocolatado",
+            "Beterraba cozida", "Chuchu");
         var escolhidos = todosOsItens().stream()
             .filter(item -> nomes.contains(item.nome()))
             .toList();
@@ -148,11 +148,11 @@ public class CatalogoItensDemonstracao {
         static final Cardapio PADRAO = new Cardapio(
             List.of(
                 new Item("6ce7a969-7c2b-5a21-b072-594a4412ab8b", "Arroz branco", 0.44),
-                new Item("2f723cf1-ddd6-58e2-881e-3ab45db8cd2d", "Feijao carioca", 0.44)),
-            "Arroz e feijao",
+                new Item("2f723cf1-ddd6-58e2-881e-3ab45db8cd2d", "Feijão carioca", 0.44)),
+            "Arroz e feijão",
             "[{\"receitaId\":\"6ce7a969-7c2b-5a21-b072-594a4412ab8b\",\"nome\":\"Arroz branco\"},"
                 + "{\"receitaId\":\"2f723cf1-ddd6-58e2-881e-3ab45db8cd2d\","
-                + "\"nome\":\"Feijao carioca\"}]");
+                + "\"nome\":\"Feijão carioca\"}]");
 
         Cardapio(List<Item> itens, Random rng) {
             this(itens, montarNome(itens), montarJson(itens, rng));

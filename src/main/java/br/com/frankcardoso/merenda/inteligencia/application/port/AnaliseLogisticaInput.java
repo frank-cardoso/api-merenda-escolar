@@ -1,19 +1,16 @@
 package br.com.frankcardoso.merenda.inteligencia.application.port;
 
-import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoOutput;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.historico.api.ItemHistorico;
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
 /**
  * Dados agregados enviados ao modelo.
  *
- * {@code taxaConsumoPlanejado} e {@code sobraDePlanejamento} sao derivaveis dos outros campos, mas
- * vao calculados de proposito: modelo de linguagem erra aritmetica, e mandar pronto evita conta
- * errada na saida. {@code sobraDePlanejamento} tem esse nome porque nao e desperdicio: refeicao
- * planejada e nao registrada pode simplesmente nao ter sido preparada.
+ * So o que vale para o periodo analisado (ultimos 30 dias). Contagens do dia de referencia
+ * (planejado, autorizados, bloqueados, taxa, sobra, previsao de demanda) ficam de fora: com a
+ * refeicao ainda em andamento o modelo as citava como se fossem o periodo e contradizia o cartao
+ * de refeicoes servidas da tela.
  *
  * {@code itensDoCardapioComTendencia} e o que permite a analise ir alem do obvio: taxa historica
  * de execucao (Java) e tendencia ao longo do tempo (Python) por item do cardapio de hoje, ja
@@ -28,50 +25,18 @@ import java.util.List;
  */
 public record AnaliseLogisticaInput(
     LocalDate data,
-    Turno turno,
+    String refeicao,
     String cardapio,
     List<String> itensDoCardapio,
     List<String> itensSelecionados,
-    int quantidadePlanejada,
-    long consumosAutorizados,
-    long tentativasBloqueadas,
-    BigDecimal taxaConsumoPlanejado,
-    long sobraDePlanejamento,
-    PrevisaoConsumoOutput previsaoConsumo,
-    String avisoPrevisaoConsumo,
     List<ItemHistorico> itensComMenorExecucao,
     List<ItemComTendencia> itensDoCardapioComTendencia,
     IndicadoresParaLLM indicadores,
     ConclusaoDeterministica conclusaoDeterministica
 ) {
 
-    public AnaliseLogisticaInput(
-        LocalDate data,
-        Turno turno,
-        String cardapio,
-        int quantidadePlanejada,
-        long consumosAutorizados,
-        long tentativasBloqueadas,
-        BigDecimal taxaConsumoPlanejado,
-        long sobraDePlanejamento
-    ) {
-        this(
-            data,
-            turno,
-            cardapio,
-            List.of(),
-            List.of(),
-            quantidadePlanejada,
-            consumosAutorizados,
-            tentativasBloqueadas,
-            taxaConsumoPlanejado,
-            sobraDePlanejamento,
-            null,
-            null,
-            List.of(),
-            List.of(),
-            null,
-            ConclusaoDeterministica.de(null, null)
-        );
+    public AnaliseLogisticaInput(LocalDate data, String refeicao, String cardapio) {
+        this(data, refeicao, cardapio, List.of(), List.of(), List.of(), List.of(), null,
+            ConclusaoDeterministica.de(null, null));
     }
 }

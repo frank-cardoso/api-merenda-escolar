@@ -1,8 +1,8 @@
 package br.com.frankcardoso.merenda.fila.api;
 
 import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record ValidarConsumoResponse(
@@ -10,13 +10,16 @@ public record ValidarConsumoResponse(
     String sinal,
     UUID alunoId,
     String alunoNome,
-    Turno turno,
+    UUID tipoRefeicaoId,
+    String refeicao,
     String cardapio,
     Instant registradoEm,
-    String motivo
+    String motivo,
+    String turnoDaTurma,
+    List<String> turnosDaRefeicao
 ) {
-    public static ValidarConsumoResponse bloqueado(String motivo, Turno turno) {
+    public static ValidarConsumoResponse bloqueado(String motivo) {
         return new ValidarConsumoResponse(ResultadoConsumo.BLOQUEADO, "VERMELHO", null, null,
-            turno, null, null, motivo);
+            null, null, null, null, motivo, null, null);
     }
 }

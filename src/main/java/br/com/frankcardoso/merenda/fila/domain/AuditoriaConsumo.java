@@ -19,6 +19,8 @@ import java.util.UUID;
 @Table(name = "auditoria_consumo")
 public class AuditoriaConsumo {
 
+    public static final String SEM_TURMA = "Sem turma";
+
     @Id
     private UUID id;
 
@@ -33,9 +35,11 @@ public class AuditoriaConsumo {
     @Column(name = "data_operacional", nullable = false)
     private LocalDate dataOperacional;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private Turno turno;
+    @Column(name = "tipo_refeicao_id", nullable = false)
+    private UUID tipoRefeicaoId;
+
+    @Column(name = "refeicao_nome", length = 60)
+    private String refeicaoNome;
 
     @Column(nullable = false)
     private Instant instante;
@@ -57,23 +61,53 @@ public class AuditoriaConsumo {
     @Column(name = "chave_consumo_autorizado", unique = true, length = 150)
     private String chaveConsumoAutorizado;
 
+    @Column(name = "turma_id")
+    private UUID turmaId;
+
+    @Column(name = "turma_nome", length = 80)
+    private String turmaNome;
+
     protected AuditoriaConsumo() {
     }
 
     public AuditoriaConsumo(UUID id, Aluno aluno, Cardapio cardapio, LocalDate dataOperacional,
-                            Turno turno, Instant instante, MetodoIdentificacao metodoIdentificacao,
-                            ResultadoConsumo resultado, String motivo, UUID correlationId,
-                            String chaveConsumoAutorizado) {
+                            UUID tipoRefeicaoId, String refeicaoNome, Instant instante,
+                            MetodoIdentificacao metodoIdentificacao, ResultadoConsumo resultado,
+                            String motivo, UUID correlationId, String chaveConsumoAutorizado,
+                            UUID turmaId, String turmaNome) {
         this.id = id;
         this.aluno = aluno;
         this.cardapio = cardapio;
         this.dataOperacional = dataOperacional;
-        this.turno = turno;
+        this.tipoRefeicaoId = tipoRefeicaoId;
+        this.refeicaoNome = refeicaoNome;
         this.instante = instante;
         this.metodoIdentificacao = metodoIdentificacao;
         this.resultado = resultado;
         this.motivo = motivo;
         this.correlationId = correlationId;
         this.chaveConsumoAutorizado = chaveConsumoAutorizado;
+        this.turmaId = turmaId;
+        this.turmaNome = turmaNome;
+    }
+
+    public UUID getTipoRefeicaoId() {
+        return tipoRefeicaoId;
+    }
+
+    public String getRefeicaoNome() {
+        return refeicaoNome;
+    }
+
+    public Instant getInstante() {
+        return instante;
+    }
+
+    public UUID getTurmaId() {
+        return turmaId;
+    }
+
+    public String getTurmaNome() {
+        return turmaNome;
     }
 }

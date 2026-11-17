@@ -1,15 +1,17 @@
 package br.com.frankcardoso.merenda.gestao.application;
 
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticosInput;
+import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticosInput.AtendimentoDia;
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticosInput.ContagemItem;
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticosInput.ContagemTurma;
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticosInput.IngredienteRef;
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticosInput.MedicaoDoDia;
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticosInput.ReceitaMedida;
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticosInput.ReceitaFechamento;
+import br.com.frankcardoso.merenda.analytics.application.port.RefeicaoRef;
+import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
 import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaIngredienteRepository;
 import br.com.frankcardoso.merenda.medicao.infrastructure.MedicaoSobraRepository;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.fila.infrastructure.AuditoriaConsumoRepository;
 import br.com.frankcardoso.merenda.historico.infrastructure.HistoricoConsumoRepository;
 import java.math.BigDecimal;
@@ -17,6 +19,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class IndicadoresDadosService {
     private final ConsolidacaoConsumoService consolidacao;
     private final AuditoriaConsumoRepository auditoria;
+    private final CardapioRepository cardapios;
     private final HistoricoConsumoRepository historico;
     private final MedicaoSobraRepository medicoes;
     private final ReceitaIngredienteRepository composicao;
@@ -36,7 +40,8 @@ public class IndicadoresDadosService {
     private final int diasJanelaIngredientes;
 
     public IndicadoresDadosService(ConsolidacaoConsumoService consolidacao,
-        AuditoriaConsumoRepository auditoria, HistoricoConsumoRepository historico,
+        AuditoriaConsumoRepository auditoria, CardapioRepository cardapios,
+        HistoricoConsumoRepository historico,
         MedicaoSobraRepository medicoes, ReceitaIngredienteRepository composicao,
         @Value("${merenda.gestao.meta-execucao-percentual:80}") BigDecimal meta,
         @Value("${merenda.medicao.escola-id:1}") int escolaDoPrototipo,
@@ -46,6 +51,7 @@ public class IndicadoresDadosService {
         }
         this.consolidacao = consolidacao;
         this.auditoria = auditoria;
+        this.cardapios = cardapios;
         this.historico = historico;
         this.medicoes = medicoes;
         this.composicao = composicao;
@@ -56,21 +62,22 @@ public class IndicadoresDadosService {
 
     // A transação termina antes da chamada HTTP ao Python.
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public IndicadoresLogisticosInput preparar(LocalDate data, Turno turno) {
-        return preparar(data, turno, List.of());
+    public IndicadoresLogisticosInput preparar(LocalDate data, UUID tipoRefeicaoId) {
+        return preparar(data, tipoRefeicaoId, List.of());
     }
 
-    public IndicadoresLogisticosInput preparar(LocalDate data, Turno turno, List<UUID> receitasSelecionadas) {
-        return preparar(data, turno, receitasSelecionadas, List.of());
+    public IndicadoresLogisticosInput preparar(LocalDate data, UUID tipoRefeicaoId,
+        List<UUID> receitasSelecionadas) {
+        return preparar(data, tipoRefeicaoId, receitasSelecionadas, List.of());
     }
 
-    public IndicadoresLogisticosInput preparar(LocalDate data, Turno turno,
+    public IndicadoresLogisticosInput preparar(LocalDate data, UUID tipoRefeicaoId,
         List<UUID> receitasSelecionadas, List<LocalDate> datasSelecionadas) {
-        var consumo = consolidacao.consolidar(data, turno);
-        var turmas = auditoria.atendimentosPorTurma(data, turno).stream()
-            .map(t -> new ContagemTurma(t.getTurma(), t.getConsumos(), t.getAlunos())).toList();
+        var consumo = consolidacao.consolidar(data, tipoRefeicaoId);
+        var turmas = auditoria.atendimentosPorTurma(data, tipoRefeicaoId).stream()
+            .map(t -> new ContagemTurma(t.getTurmaId(), t.getTurma(), t.getConsumos(), t.getAlunos())).toList();
         var inicio = data.minusDays(29);
-        var itens = historico.execucoesNaJanela(inicio, data, turno).stream()
+        var itens = historico.execucoesNaJanela(inicio, data, tipoRefeicaoId).stream()
             .collect(Collectors.groupingBy(HistoricoConsumoRepository.ExecucaoItem::getItem,
                 LinkedHashMap::new, Collectors.toList()))
             .entrySet().stream().map(entry -> new ContagemItem(entry.getKey(),
@@ -88,38 +95,56 @@ public class IndicadoresDadosService {
         // "dias completos".
         var datasDoEscopo = datasInformadas.isEmpty() ? List.<LocalDate>of()
             : receitasSelecionadas.isEmpty()
-                ? medicoes.datasComFechamento(datasInformadas.get(0), datasInformadas.get(datasInformadas.size() - 1), turno)
+                ? medicoes.datasComFechamento(datasInformadas.get(0),
+                        datasInformadas.get(datasInformadas.size() - 1), tipoRefeicaoId)
                     .stream().filter(datasInformadas::contains).toList()
-                : medicoes.datasComFechamentoCompleto(datasInformadas, turno, receitasSelecionadas,
+                : medicoes.datasComFechamentoCompleto(datasInformadas, tipoRefeicaoId, receitasSelecionadas,
                     receitasSelecionadas.size());
         var escopoDeDatasInformado = !datasInformadas.isEmpty();
         var datasFechamentos = escopoDeDatasInformado ? datasDoEscopo : receitasSelecionadas.isEmpty()
-            ? medicoes.datasComFechamento(inicio, data, turno)
-            : medicoes.datasComFechamentoPorReceitas(inicio, data, turno, receitasSelecionadas);
+            ? medicoes.datasComFechamento(inicio, data, tipoRefeicaoId)
+            : medicoes.datasComFechamentoPorReceitas(inicio, data, tipoRefeicaoId, receitasSelecionadas);
         var fechamentosDoMes = !escopoDeDatasInformado
-            ? fechamentos(data, turno, 30)
-            : fechamentosNasDatas(datasFechamentos, turno);
+            ? fechamentos(data, tipoRefeicaoId, 30)
+            : fechamentosNasDatas(datasFechamentos, tipoRefeicaoId);
         var datasSemana = datasFechamentos.stream().filter(dia -> !dia.isBefore(data.minusDays(6))).toList();
         var fechamentosDaSemana = !escopoDeDatasInformado
-            ? fechamentos(data, turno, 7)
-            : fechamentosNasDatas(datasSemana, turno);
+            ? fechamentos(data, tipoRefeicaoId, 7)
+            : fechamentosNasDatas(datasSemana, tipoRefeicaoId);
         var quantidadeFechamentos = datasFechamentos.size();
-        return new IndicadoresLogisticosInput(data, inicio, turno, consumo.quantidadePlanejada(),
+        return new IndicadoresLogisticosInput(data, inicio, new RefeicaoRef(tipoRefeicaoId, consumo.refeicao()),
+            consumo.quantidadePlanejada(),
             consumo.consumosAutorizados(), turmas.stream().mapToLong(ContagemTurma::alunosUnicos).sum(),
-            meta, turmas, itens, medicaoDoDia(data, turno, consumo.receitasCardapio()),
-            receitasMedidas(data, turno, receitasSelecionadas, datasFechamentos, escopoDeDatasInformado),
+            meta, turmas, itens, medicaoDoDia(data, tipoRefeicaoId, consumo.receitasCardapio()),
+            receitasMedidas(data, tipoRefeicaoId, receitasSelecionadas, datasFechamentos, escopoDeDatasInformado),
             fechamentosDoMes, fechamentosDaSemana,
             quantidadeFechamentos,
-            receitasSelecionadas.isEmpty() ? medicoes.countFechamentos(data.minusDays(6), data, turno) :
-                medicoes.countFechamentosPorReceitas(data.minusDays(6), data, turno, receitasSelecionadas),
-            datasFechamentos, receitasSelecionadas, datasDoEscopo, !datasDoEscopo.isEmpty());
+            receitasSelecionadas.isEmpty() ? medicoes.countFechamentos(data.minusDays(6), data, tipoRefeicaoId) :
+                medicoes.countFechamentosPorReceitas(data.minusDays(6), data, tipoRefeicaoId, receitasSelecionadas),
+            datasFechamentos, receitasSelecionadas, datasDoEscopo, !datasDoEscopo.isEmpty(),
+            historico.countByTipoRefeicaoIdIsNullAndDataBetween(inicio, data),
+            atendimentoDiario(inicio, data, tipoRefeicaoId));
     }
 
-    private MedicaoDoDia medicaoDoDia(LocalDate data, Turno turno, List<UUID> receitasDoCardapio) {
+    private List<AtendimentoDia> atendimentoDiario(LocalDate inicio, LocalDate fim, UUID tipoRefeicaoId) {
+        Map<LocalDate, Long> autorizados = auditoria.consumosPorDiaNaJanela(tipoRefeicaoId, inicio, fim).stream()
+            .collect(Collectors.toMap(AuditoriaConsumoRepository.ConsumoDiario::getData,
+                AuditoriaConsumoRepository.ConsumoDiario::getAutorizados));
+        // Dia em andamento, ainda sem fechamento, nao e atendimento final e distorceria a media.
+        var fechados = Set.copyOf(medicoes.datasComFechamento(inicio, fim, tipoRefeicaoId));
+        return cardapios.findAllByDataBetweenAndTipoRefeicaoIdAndAtivoTrueOrderByDataAsc(inicio, fim, tipoRefeicaoId)
+            .stream()
+            .filter(c -> fechados.contains(c.getData()))
+            .map(c -> new AtendimentoDia(c.getData(), c.getQuantidadePlanejada(),
+                autorizados.getOrDefault(c.getData(), 0L)))
+            .toList();
+    }
+
+    private MedicaoDoDia medicaoDoDia(LocalDate data, UUID tipoRefeicaoId, List<UUID> receitasDoCardapio) {
         if (receitasDoCardapio == null || receitasDoCardapio.isEmpty()) return null;
 
-        var resumo = medicoes.resumoDoDia(data, turno, escolaDoPrototipo, receitasDoCardapio);
-        // Nenhum item medido significa que ninguem lancou a sobra do turno, nao que ela foi zero.
+        var resumo = medicoes.resumoDoDia(data, tipoRefeicaoId, escolaDoPrototipo, receitasDoCardapio);
+        // Nenhum item medido significa que ninguem lancou a sobra da refeicao, nao que ela foi zero.
         if (resumo == null || resumo.getItens() == 0) return null;
         return new MedicaoDoDia(resumo.getPreparadas(), resumo.getServidas(), resumo.getSobra(),
             resumo.getResto(), (int) resumo.getItens(), receitasDoCardapio.size());
@@ -131,12 +156,12 @@ public class IndicadoresDadosService {
      * Janela propria, mais longa que a dos indicadores: preferencia por ingrediente muda devagar.
      * O grafo vai no payload para o servico Python nao precisar de tabela de ingrediente nenhuma.
      */
-    private List<ReceitaMedida> receitasMedidas(LocalDate data, Turno turno,
+    private List<ReceitaMedida> receitasMedidas(LocalDate data, UUID tipoRefeicaoId,
         List<UUID> receitasSelecionadas, List<LocalDate> datasDoEscopo,
         boolean escopoDeDatasInformado) {
         var medidas = !escopoDeDatasInformado
-            ? medicoes.restoPorReceita(data.minusDays(diasJanelaIngredientes), data, turno)
-            : medicoes.restoPorReceitaNasDatas(datasDoEscopo, turno);
+            ? medicoes.restoPorReceita(data.minusDays(diasJanelaIngredientes), data, tipoRefeicaoId)
+            : medicoes.restoPorReceitaNasDatas(datasDoEscopo, tipoRefeicaoId);
         if (medidas.isEmpty()) return List.of();
 
         var receitas = medidas.stream().map(MedicaoSobraRepository.RestoReceita::getReceitaId).toList();
@@ -160,17 +185,17 @@ public class IndicadoresDadosService {
             .toList();
     }
 
-    private List<ReceitaFechamento> fechamentos(LocalDate data, Turno turno, int dias) {
-        return medicoes.restoPorReceita(data.minusDays(dias - 1L), data, turno).stream()
+    private List<ReceitaFechamento> fechamentos(LocalDate data, UUID tipoRefeicaoId, int dias) {
+        return medicoes.restoPorReceita(data.minusDays(dias - 1L), data, tipoRefeicaoId).stream()
             .map(medida -> new ReceitaFechamento(medida.getReceitaId(), medida.getNome(),
                 medida.getPreparadas(), medida.getServidas(), medida.getSobra(), medida.getResto(),
                 medida.getAmostra()))
             .toList();
     }
 
-    private List<ReceitaFechamento> fechamentosNasDatas(List<LocalDate> datas, Turno turno) {
+    private List<ReceitaFechamento> fechamentosNasDatas(List<LocalDate> datas, UUID tipoRefeicaoId) {
         if (datas.isEmpty()) return List.of();
-        return medicoes.restoPorReceitaNasDatas(datas, turno).stream()
+        return medicoes.restoPorReceitaNasDatas(datas, tipoRefeicaoId).stream()
             .map(medida -> new ReceitaFechamento(medida.getReceitaId(), medida.getNome(),
                 medida.getPreparadas(), medida.getServidas(), medida.getSobra(), medida.getResto(),
                 medida.getAmostra()))

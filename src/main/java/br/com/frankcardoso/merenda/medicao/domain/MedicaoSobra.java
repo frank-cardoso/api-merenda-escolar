@@ -1,10 +1,7 @@
 package br.com.frankcardoso.merenda.medicao.domain;
 
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -12,7 +9,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * Sobra medida de um item em um dia/turno, em porcoes.
+ * Sobra medida de um item em um dia e refeicao, em porcoes.
  *
  * As duas perdas ficam separadas porque respondem a perguntas diferentes:
  * {@code sobraNaoDistribuida} e comida que nunca chegou ao prato (erro de producao) e
@@ -28,9 +25,8 @@ public class MedicaoSobra {
     @Column(nullable = false)
     private LocalDate data;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private Turno turno;
+    @Column(name = "tipo_refeicao_id", nullable = false)
+    private UUID tipoRefeicaoId;
 
     @Column(name = "escola_id", nullable = false)
     private int escolaId;
@@ -59,7 +55,7 @@ public class MedicaoSobra {
     protected MedicaoSobra() {
     }
 
-    public MedicaoSobra(UUID id, LocalDate data, Turno turno, int escolaId, UUID receitaId,
+    public MedicaoSobra(UUID id, LocalDate data, UUID tipoRefeicaoId, int escolaId, UUID receitaId,
                         int porcoesPreparadas, int porcoesServidas, int sobraNaoDistribuida,
                         int restoNoPrato, String origem, Instant registradoEm) {
         if (porcoesPreparadas < 0 || porcoesServidas < 0 || sobraNaoDistribuida < 0 || restoNoPrato < 0) {
@@ -77,7 +73,7 @@ public class MedicaoSobra {
         }
         this.id = id;
         this.data = data;
-        this.turno = turno;
+        this.tipoRefeicaoId = tipoRefeicaoId;
         this.escolaId = escolaId;
         this.receitaId = receitaId;
         this.porcoesPreparadas = porcoesPreparadas;
@@ -90,7 +86,7 @@ public class MedicaoSobra {
 
     public UUID getId() { return id; }
     public LocalDate getData() { return data; }
-    public Turno getTurno() { return turno; }
+    public UUID getTipoRefeicaoId() { return tipoRefeicaoId; }
     public int getEscolaId() { return escolaId; }
     public UUID getReceitaId() { return receitaId; }
     public int getPorcoesPreparadas() { return porcoesPreparadas; }

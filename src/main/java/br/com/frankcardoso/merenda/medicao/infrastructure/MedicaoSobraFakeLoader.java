@@ -2,6 +2,7 @@ package br.com.frankcardoso.merenda.medicao.infrastructure;
 
 import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.medicao.domain.MedicaoSobra;
+import br.com.frankcardoso.merenda.refeicao.domain.RefeicaoPadrao;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -31,7 +32,6 @@ import org.springframework.transaction.annotation.Transactional;
  * tabela recarrega.
  */
 @Component
-@Order(3)
 public class MedicaoSobraFakeLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(MedicaoSobraFakeLoader.class);
@@ -50,6 +50,7 @@ public class MedicaoSobraFakeLoader {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(3)
     @Transactional
     public void carregar() {
         if (medicoes.count() == 0) {
@@ -103,7 +104,7 @@ public class MedicaoSobraFakeLoader {
         return new MedicaoSobra(
             UUID.fromString(campos[0]),
             LocalDate.parse(campos[1]),
-            Turno.valueOf(campos[2]),
+            RefeicaoPadrao.doTurnoLegado(Turno.valueOf(campos[2])).id(),
             Integer.parseInt(campos[3]),
             UUID.fromString(campos[4]),
             Integer.parseInt(campos[6]),

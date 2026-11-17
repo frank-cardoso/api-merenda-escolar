@@ -2,7 +2,6 @@ package br.com.frankcardoso.merenda.fila.infrastructure;
 
 import br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo;
 import br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -13,32 +12,39 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface AuditoriaConsumoRepository extends JpaRepository<AuditoriaConsumo, UUID> {
+    // COALESCE: linhas anteriores a V10 (turma_nome nulo) caem no balde "Sem turma", somando com as ja carimbadas.
     @Query("""
-        SELECT a.aluno.turma AS turma, COUNT(a) AS consumos, COUNT(DISTINCT a.aluno.id) AS alunos
+        SELECT a.turmaId AS turmaId, COALESCE(a.turmaNome, br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo.SEM_TURMA) AS turma, COUNT(a) AS consumos, COUNT(DISTINCT a.aluno.id) AS alunos
         FROM AuditoriaConsumo a
-        WHERE a.dataOperacional = :data AND a.turno = :turno
+        WHERE a.dataOperacional = :data AND a.tipoRefeicaoId = :tipoRefeicaoId
           AND a.resultado = br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo.AUTORIZADO
-        GROUP BY a.aluno.turma ORDER BY a.aluno.turma
+        GROUP BY a.turmaId, COALESCE(a.turmaNome, br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo.SEM_TURMA)
+        ORDER BY COALESCE(a.turmaNome, br.com.frankcardoso.merenda.fila.domain.AuditoriaConsumo.SEM_TURMA)
         """)
-    List<AtendimentoTurma> atendimentosPorTurma(@Param("data") LocalDate data, @Param("turno") Turno turno);
+    List<AtendimentoTurma> atendimentosPorTurma(@Param("data") LocalDate data,
+                                                @Param("tipoRefeicaoId") UUID tipoRefeicaoId);
 
     interface AtendimentoTurma {
+        UUID getTurmaId();
         String getTurma();
         long getConsumos();
         long getAlunos();
     }
 
-    boolean existsByAlunoIdAndDataOperacionalAndTurnoAndResultadoAndInstanteGreaterThanEqual(
+    boolean existsByTurmaId(UUID turmaId);
+
+    boolean existsByAlunoIdAndDataOperacionalAndTipoRefeicaoIdAndResultadoAndInstanteBetween(
         UUID alunoId,
         LocalDate dataOperacional,
-        Turno turno,
+        UUID tipoRefeicaoId,
         ResultadoConsumo resultado,
-        Instant instante
+        Instant inicio,
+        Instant fim
     );
 
-    long countByDataOperacionalAndTurnoAndResultado(
+    long countByDataOperacionalAndTipoRefeicaoIdAndResultado(
         LocalDate dataOperacional,
-        Turno turno,
+        UUID tipoRefeicaoId,
         ResultadoConsumo resultado
     );
 
@@ -52,15 +58,27 @@ public interface AuditoriaConsumoRepository extends JpaRepository<AuditoriaConsu
     @Query("""
         SELECT a.dataOperacional AS data, COUNT(a) AS autorizados
         FROM AuditoriaConsumo a
-        WHERE a.turno = :turno
+        WHERE a.tipoRefeicaoId = :tipoRefeicaoId
           AND a.resultado = br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo.AUTORIZADO
           AND a.dataOperacional < :ate
         GROUP BY a.dataOperacional
         ORDER BY a.dataOperacional DESC
         """)
-    List<ConsumoDiario> consumosPorDia(@Param("turno") Turno turno,
+    List<ConsumoDiario> consumosPorDia(@Param("tipoRefeicaoId") UUID tipoRefeicaoId,
                                        @Param("ate") LocalDate ate,
                                        Pageable pageable);
+
+    @Query("""
+        SELECT a.dataOperacional AS data, COUNT(a) AS autorizados
+        FROM AuditoriaConsumo a
+        WHERE a.tipoRefeicaoId = :tipoRefeicaoId
+          AND a.resultado = br.com.frankcardoso.merenda.fila.domain.ResultadoConsumo.AUTORIZADO
+          AND a.dataOperacional BETWEEN :inicio AND :fim
+        GROUP BY a.dataOperacional
+        """)
+    List<ConsumoDiario> consumosPorDiaNaJanela(@Param("tipoRefeicaoId") UUID tipoRefeicaoId,
+                                               @Param("inicio") LocalDate inicio,
+                                               @Param("fim") LocalDate fim);
 
     interface ConsumoDiario {
         LocalDate getData();

@@ -2,7 +2,7 @@ package br.com.frankcardoso.merenda.relatorio.application;
 
 import br.com.frankcardoso.merenda.inteligencia.application.port.AnaliseLogisticaOutput;
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticos;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
+import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaRepository;
 import br.com.frankcardoso.merenda.relatorio.api.RelatorioResumoResponse;
 import br.com.frankcardoso.merenda.relatorio.api.CriarRelatorioIARequest;
 import br.com.frankcardoso.merenda.relatorio.api.CriarRelatorioIAResponse;
@@ -10,6 +10,7 @@ import br.com.frankcardoso.merenda.relatorio.api.RelatorioIAResponse;
 import br.com.frankcardoso.merenda.relatorio.domain.RelatorioIA;
 import br.com.frankcardoso.merenda.relatorio.infrastructure.RelatorioIARepository;
 import br.com.frankcardoso.merenda.medicao.infrastructure.MedicaoSobraRepository;
+import br.com.frankcardoso.merenda.refeicao.application.GradeRefeicoesService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
@@ -29,21 +30,26 @@ public class RelatorioIAService {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final MedicaoSobraRepository medicoes;
+    private final ReceitaRepository receitas;
+    private final GradeRefeicoesService grade;
 
     public RelatorioIAService(RelatorioIARepository repository, RelatorioIAWorker worker,
-                              ObjectMapper objectMapper, Clock clock, MedicaoSobraRepository medicoes) {
+                              ObjectMapper objectMapper, Clock clock, MedicaoSobraRepository medicoes,
+                              ReceitaRepository receitas, GradeRefeicoesService grade) {
         this.repository = repository;
         this.worker = worker;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.medicoes = medicoes;
+        this.receitas = receitas;
+        this.grade = grade;
     }
 
     public CriarRelatorioIAResponse criar(CriarRelatorioIARequest request) {
         validarAmostra(request);
         RelatorioIA relatorio = repository.saveAndFlush(
-            RelatorioIA.pendente(request.dataReferencia(), request.turno(), Instant.now(clock),
-                request.receitaIds(), request.datasSelecionadas()));
+            RelatorioIA.pendente(request.dataReferencia(), request.tipoRefeicaoId(), Instant.now(clock),
+                request.receitaIds(), request.datasSelecionadas(), request.turmaId()));
         worker.processar(relatorio.getId());
         return new CriarRelatorioIAResponse(
             relatorio.getId(),
@@ -54,29 +60,35 @@ public class RelatorioIAService {
 
     private void validarAmostra(CriarRelatorioIARequest request) {
         var inicio = request.dataReferencia().minusDays(29);
+        var tipoRefeicao = grade.buscar(request.tipoRefeicaoId());
+        var refeicao = tipoRefeicao.getId();
         var fechamentos = request.datasSelecionadas().isEmpty()
             ? request.receitaIds().isEmpty()
-                ? medicoes.countFechamentos(inicio, request.dataReferencia(), request.turno())
+                ? medicoes.countFechamentos(inicio, request.dataReferencia(), refeicao)
                 : medicoes.countFechamentosPorReceitas(inicio, request.dataReferencia(),
-                    request.turno(), request.receitaIds())
+                    refeicao, request.receitaIds())
             : request.receitaIds().isEmpty()
-                ? medicoes.countFechamentosNasDatas(request.datasSelecionadas(), request.turno())
-                : medicoes.datasComFechamentoCompleto(request.datasSelecionadas(), request.turno(),
+                ? medicoes.countFechamentosNasDatas(request.datasSelecionadas(), refeicao)
+                : medicoes.datasComFechamentoCompleto(request.datasSelecionadas(), refeicao,
                     request.receitaIds(), request.receitaIds().size()).size();
         if (fechamentos < MINIMO_FECHAMENTOS_IA) {
-            throw new IllegalArgumentException(
-                "A análise IA exige pelo menos %d dias com fechamento no período"
-                    .formatted(MINIMO_FECHAMENTOS_IA));
+            var periodo = request.datasSelecionadas().isEmpty()
+                ? "nos últimos 30 dias" : "entre as datas selecionadas";
+            throw new AmostraInsuficienteParaAnaliseException(
+                "O relatório de IA precisa de pelo menos %d dias com fechamento %s nesta refeição (%s); há %d."
+                    .formatted(MINIMO_FECHAMENTOS_IA, periodo, tipoRefeicao.getNome(), fechamentos));
         }
         for (var receitaId : request.receitaIds()) {
             var diasDoItem = request.datasSelecionadas().isEmpty()
-                ? medicoes.countDiasPorReceita(inicio, request.dataReferencia(), request.turno(), receitaId)
-                : medicoes.countDiasPorReceitaNasDatas(request.datasSelecionadas(), request.turno(), receitaId);
+                ? medicoes.countDiasPorReceita(inicio, request.dataReferencia(), refeicao, receitaId)
+                : medicoes.countDiasPorReceitaNasDatas(request.datasSelecionadas(), refeicao, receitaId);
             if (diasDoItem
                 < MINIMO_FECHAMENTOS_ITEM_IA) {
-                throw new IllegalArgumentException(
-                    "A receita %s exige pelo menos %d dias com fechamento"
-                        .formatted(receitaId, MINIMO_FECHAMENTOS_ITEM_IA));
+                var nome = receitas.findById(receitaId).map(receita -> receita.getNome())
+                    .orElse(receitaId.toString());
+                throw new AmostraInsuficienteParaAnaliseException(
+                    "A receita %s precisa de pelo menos %d dias com fechamento; há %d."
+                        .formatted(nome, MINIMO_FECHAMENTOS_ITEM_IA, diasDoItem));
             }
         }
     }
@@ -88,6 +100,8 @@ public class RelatorioIAService {
             relatorio.getId(),
             relatorio.getDataReferencia(),
             relatorio.getTurno(),
+            relatorio.getTipoRefeicaoId(),
+            nomeDaRefeicao(relatorio.getTipoRefeicaoId()),
             relatorio.getStatus(),
             relatorio.getProvedor(),
             relatorio.getModelo(),
@@ -98,8 +112,24 @@ public class RelatorioIAService {
             relatorio.getCriadoEm(),
             relatorio.getIniciadoEm(),
             relatorio.getConcluidoEm(),
-            lerIndicadores(relatorio.getIndicadoresJson())
+            lerIndicadores(relatorio.getIndicadoresJson()),
+            relatorio.getTurmaId(),
+            lerEscopoCardapio(relatorio.getDadosEntradaJson())
         );
+    }
+
+    /**
+     * O nome do cardápio analisado só existe no payload que foi para a IA
+     * ({@code dadosEntradaJson}), nunca foi exposto na resposta. Sem isso a tela não tem como
+     * dizer quais itens o relatório cobriu, e duas análises com escopos diferentes parecem iguais.
+     */
+    private String lerEscopoCardapio(String dadosEntradaJson) {
+        if (dadosEntradaJson == null) return null;
+        try {
+            return objectMapper.readTree(dadosEntradaJson).path("cardapio").asText(null);
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
     }
 
     private AnaliseLogisticaOutput lerResultado(String json) {
@@ -120,8 +150,13 @@ public class RelatorioIAService {
         }
     }
 
-    public List<RelatorioResumoResponse> listar(LocalDate data, Turno turno) {
-        return repository.findTop20ByDataReferenciaAndTurnoOrderByCriadoEmDesc(data, turno).stream()
+    private String nomeDaRefeicao(UUID tipoRefeicaoId) {
+        return tipoRefeicaoId == null ? null : grade.buscar(tipoRefeicaoId).getNome();
+    }
+
+    public List<RelatorioResumoResponse> listar(LocalDate data, UUID tipoRefeicaoId) {
+        grade.buscar(tipoRefeicaoId);
+        return repository.findTop20ByDataReferenciaAndTipoRefeicaoIdOrderByCriadoEmDesc(data, tipoRefeicaoId).stream()
             .map(r -> new RelatorioResumoResponse(
                 r.getId(), r.getStatus(), r.getCriadoEm(), r.getProvedor(), r.getModelo())).toList();
     }

@@ -4,6 +4,7 @@ import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoInp
 import br.com.frankcardoso.merenda.analytics.application.port.IndicadoresLogisticos;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoOutput;
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoPort;
+import br.com.frankcardoso.merenda.analytics.application.port.RefeicaoRef;
 import br.com.frankcardoso.merenda.analytics.application.port.TendenciaItemInput;
 import br.com.frankcardoso.merenda.analytics.application.port.TendenciaItemOutput;
 import br.com.frankcardoso.merenda.analytics.application.port.TendenciaItemPort;
@@ -105,28 +106,25 @@ public class RelatorioIAWorker {
             var selecionadas = receitasSelecionadas(relatorio);
             var datasSelecionadas = datasSelecionadas(relatorio);
             ConsolidacaoConsumoResponse consolidacao = consolidarComReferencia(
-                relatorio.getDataReferencia(), relatorio.getTurno(), datasSelecionadas);
+                relatorio.getDataReferencia(), relatorio.getTipoRefeicaoId(), datasSelecionadas);
             var indicadores = selecionadas.isEmpty() && datasSelecionadas.isEmpty()
-                ? indicadoresService.calcular(consolidacao.data(), consolidacao.turno())
-                : indicadoresService.calcular(consolidacao.data(), consolidacao.turno(), selecionadas,
+                ? indicadoresService.calcular(consolidacao.data(), consolidacao.tipoRefeicaoId())
+                : indicadoresService.calcular(consolidacao.data(), consolidacao.tipoRefeicaoId(), selecionadas,
                     datasSelecionadas);
             if (indicadores == null) {
-                indicadores = IndicadoresLogisticos.indisponivel(
-                    consolidacao.data(), consolidacao.turno());
+                indicadores = IndicadoresLogisticos.indisponivel(consolidacao.data(),
+                    new RefeicaoRef(consolidacao.tipoRefeicaoId(), consolidacao.refeicao()));
             }
             consolidacao = alinharConsolidacaoAFotografia(consolidacao, indicadores);
             AnaliseLogisticaInput input = criarInput(consolidacao, preverConsumo(consolidacao), indicadores,
-                selecionadas);
+                selecionadas, relatorio.getTurmaId());
 
             relatorio.registrarIndicadores(escreverJson(indicadores));
 
             relatorio.iniciar(provedor, modelo, escreverJson(input), Instant.now(clock));
             relatorio = repository.saveAndFlush(relatorio);
 
-            var resultado = analisarComTimeout(input);
-            if (resultado.saida() == null) {
-                throw new IllegalStateException("O provedor de IA retornou resposta vazia");
-            }
+            var resultado = analisarOuResumirSemIA(input);
             var saida = comClassificacoesDeterministicas(
                 resultado.saida(), input.conclusaoDeterministica());
             // A classificacao e responsabilidade do codigo. O modelo pode devolver um valor
@@ -144,20 +142,19 @@ public class RelatorioIAWorker {
     }
 
     private ConsolidacaoConsumoResponse consolidarComReferencia(
-        LocalDate dataReferencia, br.com.frankcardoso.merenda.fila.domain.Turno turno,
-        List<LocalDate> datasSelecionadas) {
+        LocalDate dataReferencia, UUID tipoRefeicaoId, List<LocalDate> datasSelecionadas) {
         try {
-            return consolidacaoService.consolidar(dataReferencia, turno);
+            return consolidacaoService.consolidar(dataReferencia, tipoRefeicaoId);
         } catch (RuntimeException excecao) {
             if (datasSelecionadas.isEmpty()) throw excecao;
 
             var dataComCardapio = datasSelecionadas.stream().max(LocalDate::compareTo)
                 .orElseThrow();
-            var escopo = consolidacaoService.consolidar(dataComCardapio, turno);
+            var escopo = consolidacaoService.consolidar(dataComCardapio, tipoRefeicaoId);
             // A data de referência continua sendo a data escolhida no dashboard; somente a
             // fotografia operacional vem do último dia em que o cardápio selecionado existiu.
             return new ConsolidacaoConsumoResponse(
-                dataReferencia, escopo.turno(), escopo.cardapioId(), escopo.cardapio(),
+                dataReferencia, escopo.tipoRefeicaoId(), escopo.refeicao(), escopo.cardapioId(), escopo.cardapio(),
                 escopo.itensCardapio(), escopo.receitasCardapio(), escopo.quantidadePlanejada(),
                 escopo.consumosAutorizados(), escopo.tentativasBloqueadas(),
                 escopo.taxaConsumoPlanejado(), escopo.sobraEstimada());
@@ -180,15 +177,16 @@ public class RelatorioIAWorker {
         ConsolidacaoConsumoResponse consolidacao,
         ResultadoPrevisao resultadoPrevisao,
         IndicadoresLogisticos indicadores,
-        List<UUID> receitasSelecionadas
+        List<UUID> receitasSelecionadas,
+        UUID turmaId
     ) {
-        var ranking = historicoService.rankingDosPioresItens(consolidacao.data(), consolidacao.turno());
+        var ranking = historicoService.rankingDosPioresItens(consolidacao.data(), consolidacao.tipoRefeicaoId());
         var escopoSelecionado = !receitasSelecionadas.isEmpty();
         var receitasDoEscopo = escopoSelecionado
             ? receitasSelecionadas
             : consolidacao.receitasCardapio();
         var itensComTaxa = historicoService.itensDoCardapioComTaxa(
-            consolidacao.data(), consolidacao.turno(), receitasDoEscopo);
+            consolidacao.data(), consolidacao.tipoRefeicaoId(), receitasDoEscopo);
         var itensDoEscopo = escopoSelecionado && indicadores.aceitacaoItens() != null
             ? indicadores.aceitacaoItens().stream()
                 .map(IndicadoresLogisticos.AceitacaoItem::item).toList()
@@ -199,37 +197,30 @@ public class RelatorioIAWorker {
 
         return new AnaliseLogisticaInput(
             consolidacao.data(),
-            consolidacao.turno(),
+            consolidacao.refeicao(),
             nomeDoEscopo,
             itensDoEscopo,
             indicadores.aceitacaoItens() == null ? List.of() : indicadores.aceitacaoItens().stream()
                 .map(IndicadoresLogisticos.AceitacaoItem::item).toList(),
-            consolidacao.quantidadePlanejada(),
-            consolidacao.consumosAutorizados(),
-            consolidacao.tentativasBloqueadas(),
-            consolidacao.taxaConsumoPlanejado(),
-            consolidacao.sobraEstimada(),
-            resultadoPrevisao.previsao(),
-            resultadoPrevisao.aviso(),
             ranking,
             itensComTendencia(consolidacao, itensComTaxa),
-            IndicadoresParaLLM.de(indicadores),
+            IndicadoresParaLLM.de(indicadores, turmaId),
             ConclusaoDeterministica.de(indicadores, resultadoPrevisao.previsao())
         );
     }
 
     /**
-     * O modelo redige, o codigo classifica. Sem isso o painel voltava a estampar desperdicio ALTO
-     * sem nenhuma medicao de sobra por tras — o modelo apenas repetia o campo que ja chegava
-     * classificado no payload.
+     * O modelo redige só o resumo, o codigo classifica e escreve as limitacoes. Sem isso o painel
+     * voltava a estampar desperdicio ALTO sem nenhuma medicao de sobra por tras — o modelo apenas
+     * repetia o campo que ja chegava classificado no payload.
      */
     private AnaliseLogisticaOutput comClassificacoesDeterministicas(
         AnaliseLogisticaOutput saida, ConclusaoDeterministica conclusao
     ) {
         if (conclusao == null) return saida;
         return new AnaliseLogisticaOutput(saida.resumoExecutivo(), conclusao.nivelAceitacao(),
-            conclusao.riscoDesperdicio(), saida.evidencias(), saida.recomendacoes(),
-            saida.observacaoLimitacoes());
+            conclusao.riscoDesperdicio(), List.of(), List.of(),
+            String.join(" ", conclusao.limitacoes()));
     }
 
     // A fila pode avançar enquanto as consultas são feitas. A fotografia prevalece também
@@ -238,8 +229,8 @@ public class RelatorioIAWorker {
         ConsolidacaoConsumoResponse original, IndicadoresLogisticos indicadores) {
         if (indicadores == null || indicadores.execucaoPlanejamento() == null) return original;
         var execucao = indicadores.execucaoPlanejamento();
-        return new ConsolidacaoConsumoResponse(original.data(), original.turno(), original.cardapioId(),
-            original.cardapio(), original.itensCardapio(), original.receitasCardapio(),
+        return new ConsolidacaoConsumoResponse(original.data(), original.tipoRefeicaoId(), original.refeicao(),
+            original.cardapioId(), original.cardapio(), original.itensCardapio(), original.receitasCardapio(),
             Math.toIntExact(execucao.refeicoesPlanejadas()),
             execucao.consumosRegistrados(), original.tentativasBloqueadas(),
             execucao.percentual() == null ? BigDecimal.ZERO : execucao.percentual(),
@@ -262,7 +253,7 @@ public class RelatorioIAWorker {
         try {
             var receitas = itensComTaxa.stream().map(ItemHistorico::receitaId).toList();
             var series = historicoService.serieDiariaDosItens(
-                consolidacao.data(), consolidacao.turno(), receitas);
+                consolidacao.data(), consolidacao.tipoRefeicaoId(), receitas);
 
             // A chave trafegada e o id da receita: o servico de tendencia so devolve a chave que
             // recebeu, e nome nao serve de chave estavel.
@@ -290,7 +281,7 @@ public class RelatorioIAWorker {
         try {
             var previsao = previsaoPort.prever(new PrevisaoConsumoInput(
                 consolidacao.data(),
-                consolidacao.turno(),
+                consolidacao.refeicao(),
                 consolidacao.cardapio(),
                 consolidacao.quantidadePlanejada(),
                 consolidacao.consumosAutorizados(),
@@ -307,14 +298,14 @@ public class RelatorioIAWorker {
     }
 
     /**
-     * Serie de consumo dos dias anteriores no mesmo turno, para a previsao deixar de ser
+     * Serie de consumo dos dias anteriores na mesma refeicao, para a previsao deixar de ser
      * circular: sem ela o servico devolve o consumo do proprio dia como estimativa.
      */
     private List<PrevisaoConsumoInput.DiaConsumo> consumosDosDiasAnteriores(
         ConsolidacaoConsumoResponse consolidacao
     ) {
         return auditoriaRepository.consumosPorDia(
-                consolidacao.turno(),
+                consolidacao.tipoRefeicaoId(),
                 consolidacao.data(),
                 PageRequest.of(0, DIAS_DE_HISTORICO_NA_PREVISAO))
             .stream()
@@ -329,6 +320,23 @@ public class RelatorioIAWorker {
     }
 
     private record ResultadoAnalise(AnaliseLogisticaOutput saida, String provedor, String modelo) {
+    }
+
+    // Tudo o que o modelo escreve e o resumo; sem ele o relatorio sai com o resumo montado pelo codigo.
+    private ResultadoAnalise analisarOuResumirSemIA(AnaliseLogisticaInput input) {
+        try {
+            var resultado = analisarComTimeout(input);
+            if (resultado.saida() == null) {
+                throw new IllegalStateException("O provedor de IA retornou resposta vazia");
+            }
+            return resultado;
+        } catch (RuntimeException exception) {
+            LOG.warn("Relatorio concluido sem IA, com resumo deterministico: {}", mensagemSegura(exception));
+            var saida = new AnaliseLogisticaOutput(
+                ConclusaoDeterministica.resumoCurto(input.indicadores()), null, null,
+                List.of(), List.of(), null);
+            return new ResultadoAnalise(saida, "deterministico", null);
+        }
     }
 
     private ResultadoAnalise analisarComTimeout(AnaliseLogisticaInput input) {

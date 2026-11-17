@@ -6,10 +6,16 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-/** Fotografia calculada, independente da interpretação de um modelo de linguagem. */
+/**
+ * Fotografia calculada, independente da interpretação de um modelo de linguagem.
+ *
+ * {@code turno} só vem preenchido nas fotografias anteriores ao schema 5, gravadas antes da
+ * análise por refeição; continua aqui para elas ainda serem lidas. Fotografias do schema 5 não têm
+ * {@code planoDeAcao}, {@code sobraPercentual} nem as médias diárias: vêm nulos.
+ */
 public record IndicadoresLogisticos(
     String schemaVersion, String calculoVersao, String status,
-    LocalDate dataReferencia, LocalDate inicioHistorico, Turno turno,
+    LocalDate dataReferencia, LocalDate inicioHistorico, Turno turno, RefeicaoRef refeicao,
     ExecucaoPlanejamento execucaoPlanejamento, Atendimentos atendimentos,
     List<ItemRanking> topComidas, List<AceitacaoItem> aceitacaoItens,
     List<AceitacaoItem> aceitacaoItensSemana,
@@ -17,16 +23,22 @@ public record IndicadoresLogisticos(
     List<LocalDate> datasFechamentosDoMes,
     List<TurmaIndicadores> porTurma,
     Aceitacao aceitacao, Desperdicio desperdicio,
-    AnaliseIngredientes ingredientes, AnaliseIndisponivel rotacaoCardapio, List<String> avisos
+    AnaliseIngredientes ingredientes, AnaliseIndisponivel rotacaoCardapio, List<String> avisos,
+    List<AcaoPlano> planoDeAcao
 ) {
     public record ExecucaoPlanejamento(long refeicoesPlanejadas, long consumosRegistrados,
-        BigDecimal percentual, BigDecimal metaPercentual, BigDecimal diferencaMetaPp, String statusMeta) {}
+        BigDecimal percentual, BigDecimal metaPercentual, BigDecimal diferencaMetaPp, String statusMeta,
+        BigDecimal mediaAtendidosDia, BigDecimal mediaPlanejadaDia) {}
     public record Atendimentos(long alunosUnicos, long repeticoes) {}
     public record ItemRanking(String item, long planejamentos, long execucoesRegistradas,
         int escolas, List<String> origens, String metrica, BigDecimal percentual) {}
     public record AceitacaoItem(UUID receitaId, String item, long porcoesPreparadas, long porcoesServidas,
-        long porcoesConsumidas, long restoNoPrato, BigDecimal percentual, long fechamentos) {}
-    public record TurmaIndicadores(String turma, long consumosRegistrados, long alunosUnicos,
+        long porcoesConsumidas, long restoNoPrato, BigDecimal percentual, BigDecimal sobraPercentual,
+        long fechamentos) {}
+    /** Ação já escrita pelo serviço de indicadores; {@code valor} e {@code referencia} em %. */
+    public record AcaoPlano(String tipo, UUID receitaId, String item, String texto,
+        BigDecimal valor, BigDecimal referencia) {}
+    public record TurmaIndicadores(UUID turmaId, String turma, long consumosRegistrados, long alunosUnicos,
         long repeticoes, BigDecimal percentual, String statusMeta, String motivo) {}
     public record AnaliseIndisponivel(String status, String motivo, Integer cicloSugeridoDias) {}
 
@@ -44,9 +56,10 @@ public record IndicadoresLogisticos(
     public record AnaliseIngredientes(String status, BigDecimal basePercentualResto,
         List<IngredienteResto> acimaDaBase, String motivo) {}
 
-    public static IndicadoresLogisticos indisponivel(LocalDate data, Turno turno) {
-        return new IndicadoresLogisticos("3", "indicadores-v1", "INDISPONIVEL", data,
-            data.minusDays(29), turno, null, null, List.of(), List.of(), List.of(), 0, 0, List.of(), List.of(), null, null, null, null,
-            List.of("Serviço de indicadores indisponível. Nenhum percentual foi estimado pela IA."));
+    public static IndicadoresLogisticos indisponivel(LocalDate data, RefeicaoRef refeicao) {
+        return new IndicadoresLogisticos("6", "indicadores-v1", "INDISPONIVEL", data,
+            data.minusDays(29), null, refeicao, null, null, List.of(), List.of(), List.of(), 0, 0,
+            List.of(), List.of(), null, null, null, null,
+            List.of("Serviço de indicadores indisponível. Nenhum percentual foi estimado pela IA."), List.of());
     }
 }

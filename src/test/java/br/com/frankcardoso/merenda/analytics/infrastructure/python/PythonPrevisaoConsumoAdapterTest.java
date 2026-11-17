@@ -5,12 +5,12 @@ import static org.springframework.http.HttpMethod.POST;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import br.com.frankcardoso.merenda.analytics.application.port.PrevisaoConsumoInput;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -32,7 +32,7 @@ class PythonPrevisaoConsumoAdapterTest {
             .andExpect(content().json("""
                 {
                   "dataReferencia": "2026-08-26",
-                  "turno": "NOITE",
+                  "refeicao": "Almoço",
                   "cardapio": "Arroz, feijao e frango",
                   "quantidadePlanejada": 300,
                   "consumosAutorizados": 1,
@@ -42,6 +42,7 @@ class PythonPrevisaoConsumoAdapterTest {
                   "historico": []
                 }
                 """))
+            .andExpect(jsonPath("$.turno").doesNotExist())
             .andRespond(withSuccess("""
                 {
                   "demandaEstimada": 1,
@@ -59,7 +60,7 @@ class PythonPrevisaoConsumoAdapterTest {
 
         var resultado = adapter.prever(new PrevisaoConsumoInput(
             LocalDate.of(2026, 8, 26),
-            Turno.NOITE,
+            "Almoço",
             "Arroz, feijao e frango",
             300,
             1,

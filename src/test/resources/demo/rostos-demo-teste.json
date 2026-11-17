@@ -1,0 +1,7 @@
+{"origem": "teste fictício", "modelo": "Facenet",
+ "alunos": [
+  {"codigoPublico": "ALU-9001", "matricula": "20269001", "nome": "Aluno Ficticio Um",
+   "lfwIdentidade": "ficticio_um", "imagemTeste": "ALU-9001-teste.jpg", "embedding": [0.1, 0.2, 0.3]},
+  {"codigoPublico": "ALU-9002", "matricula": "20269002", "nome": "Aluno Ficticio Dois",
+   "lfwIdentidade": "ficticio_dois", "imagemTeste": "ALU-9002-teste.jpg", "embedding": [0.3, 0.2, 0.1]}
+ ]}

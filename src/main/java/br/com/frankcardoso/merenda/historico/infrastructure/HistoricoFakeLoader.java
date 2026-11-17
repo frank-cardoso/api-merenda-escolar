@@ -1,6 +1,6 @@
 package br.com.frankcardoso.merenda.historico.infrastructure;
 
-import br.com.frankcardoso.merenda.fila.domain.Turno;
+import br.com.frankcardoso.merenda.refeicao.domain.RefeicaoPadrao;
 import br.com.frankcardoso.merenda.historico.domain.HistoricoConsumo;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -27,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
  * dados, e apagar a tabela e suficiente para recarregar depois de regerar o CSV.
  */
 @Component
-@Order(2)
 public class HistoricoFakeLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(HistoricoFakeLoader.class);
@@ -43,6 +42,7 @@ public class HistoricoFakeLoader {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(2)
     @Transactional
     public void carregar() {
         if (repository.count() > 0) return;
@@ -88,7 +88,7 @@ public class HistoricoFakeLoader {
         return new HistoricoConsumo(
             UUID.fromString(campos[0]),
             LocalDate.parse(campos[1]),
-            Turno.valueOf(campos[2]),
+            RefeicaoPadrao.doNomeLegado(campos[4]).map(RefeicaoPadrao::id).orElse(null),
             Integer.parseInt(campos[3]),
             campos[4],
             UUID.fromString(campos[5]),

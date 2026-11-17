@@ -6,13 +6,17 @@ import br.com.frankcardoso.merenda.cardapio.api.ItemCardapioDto;
 import br.com.frankcardoso.merenda.cardapio.domain.Cardapio;
 import br.com.frankcardoso.merenda.cardapio.infrastructure.CardapioRepository;
 import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaRepository;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
+import br.com.frankcardoso.merenda.refeicao.application.GradeRefeicoesService;
+import br.com.frankcardoso.merenda.refeicao.domain.TipoRefeicao;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,21 +29,27 @@ public class CardapioService {
 
     private final CardapioRepository repository;
     private final ReceitaRepository receitas;
+    private final GradeRefeicoesService grade;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
     public CardapioService(CardapioRepository repository, ReceitaRepository receitas,
-                           ObjectMapper objectMapper, Clock clock) {
+                           GradeRefeicoesService grade, ObjectMapper objectMapper, Clock clock) {
         this.repository = repository;
         this.receitas = receitas;
+        this.grade = grade;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
 
     @Transactional(readOnly = true)
     public List<CardapioResponse> listar() {
-        return repository.findAllByAtivoTrueOrderByDataDescTurnoAsc().stream()
-            .map(this::paraResposta)
+        Map<UUID, TipoRefeicao> refeicoes = new HashMap<>();
+        grade.listar().forEach(refeicao -> refeicoes.put(refeicao.getId(), refeicao));
+        return repository.findAllByAtivoTrueOrderByDataDesc().stream()
+            .sorted(Comparator.comparing(Cardapio::getData, Comparator.reverseOrder())
+                .thenComparingInt(cardapio -> refeicoes.get(cardapio.getTipoRefeicaoId()).getOrdem()))
+            .map(cardapio -> paraResposta(cardapio, refeicoes.get(cardapio.getTipoRefeicaoId())))
             .toList();
     }
 
@@ -48,12 +58,13 @@ public class CardapioService {
         if (request.data().isBefore(LocalDate.now(clock))) {
             throw new CardapioDataPassadaException(request.data());
         }
-        exigirCardapioAtivoInexistente(request.data(), request.turno());
+        var refeicao = grade.buscar(request.tipoRefeicaoId());
+        exigirCardapioAtivoInexistente(request.data(), refeicao);
 
         var cardapio = new Cardapio(
             UUID.randomUUID(),
             request.data(),
-            request.turno(),
+            refeicao.getId(),
             request.nomeRefeicao(),
             request.descricao(),
             escreverItens(resolverReceitas(request.itens())),
@@ -61,28 +72,29 @@ public class CardapioService {
             true
         );
 
-        return paraResposta(repository.save(cardapio));
+        return paraResposta(repository.save(cardapio), refeicao);
     }
 
     @Transactional
     public CardapioResponse atualizar(UUID id, CardapioRequest request) {
         var cardapio = buscarAtivo(id);
-        boolean mudouDataOuTurno = !cardapio.getData().equals(request.data())
-            || cardapio.getTurno() != request.turno();
-        if (mudouDataOuTurno) {
-            exigirCardapioAtivoInexistente(request.data(), request.turno());
+        var refeicao = grade.buscar(request.tipoRefeicaoId());
+        boolean mudouDataOuRefeicao = !cardapio.getData().equals(request.data())
+            || !cardapio.getTipoRefeicaoId().equals(refeicao.getId());
+        if (mudouDataOuRefeicao) {
+            exigirCardapioAtivoInexistente(request.data(), refeicao);
         }
 
         cardapio.atualizar(
             request.data(),
-            request.turno(),
+            refeicao.getId(),
             request.nomeRefeicao(),
             request.descricao(),
             escreverItens(resolverReceitas(request.itens())),
             request.quantidadePlanejada()
         );
 
-        return paraResposta(repository.save(cardapio));
+        return paraResposta(repository.save(cardapio), refeicao);
     }
 
     @Transactional
@@ -97,17 +109,18 @@ public class CardapioService {
             .orElseThrow(() -> new CardapioNaoEncontradoPorIdException(id));
     }
 
-    private void exigirCardapioAtivoInexistente(LocalDate data, Turno turno) {
-        if (repository.existsByDataAndTurnoAndAtivoTrue(data, turno)) {
-            throw new CardapioDuplicadoException(data, turno);
+    private void exigirCardapioAtivoInexistente(LocalDate data, TipoRefeicao refeicao) {
+        if (repository.existsByDataAndTipoRefeicaoIdAndAtivoTrue(data, refeicao.getId())) {
+            throw new CardapioDuplicadoException(data, refeicao.getNome());
         }
     }
 
-    private CardapioResponse paraResposta(Cardapio cardapio) {
+    private CardapioResponse paraResposta(Cardapio cardapio, TipoRefeicao refeicao) {
         return new CardapioResponse(
             cardapio.getId(),
             cardapio.getData(),
-            cardapio.getTurno(),
+            cardapio.getTipoRefeicaoId(),
+            refeicao.getNome(),
             cardapio.getNomeRefeicao(),
             cardapio.getDescricao(),
             lerItens(cardapio.getItensJson()),

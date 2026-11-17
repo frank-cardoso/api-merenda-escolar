@@ -79,7 +79,7 @@ No sistema legado (Betha Merenda), `CARDAPIOS` e um **periodo de validade**
 consumo. A composicao vem de `REFEICOES` → `RECEITAS` → `INGREDIENTES` (tres tabelas
 encadeadas), e a tela de cadastro e uma matriz semanal (dia da semana x refeicao x receitas).
 
-Aqui o modelo e deliberadamente mais enxuto: **um cardapio = uma data + um turno**, com os itens
+Aqui o modelo e deliberadamente mais enxuto: **um cardapio = uma data + um turno** (hoje, uma data + uma refeicao; ver secao 9), com os itens
 em `itens_json`. Isso colapsa cinco tabelas do legado em uma. A contrapartida e que nao existe
 cardapio "modelo semanal" — para uma semana inteira e preciso cadastrar dia a dia. Aceitavel no
 escopo de prototipo, mas e o primeiro ponto a revisitar se o sistema crescer.
@@ -96,11 +96,11 @@ Vale notar que `relatorio_ia` **nao** tem FK para cardapio: ele guarda um snapsh
 
 ### Constraint unica removida (V3)
 
-O ideal seria um indice unico parcial (`UNIQUE(data, turno) WHERE ativo = TRUE`), permitindo
+O ideal seria um indice unico parcial (`UNIQUE(data, turno) WHERE ativo = TRUE`; hoje, por refeicao), permitindo
 varias linhas historicas inativas e apenas uma ativa. **O H2 nao suporta essa sintaxe.**
 
 Solucao adotada: remover a constraint do banco e garantir a regra no `CardapioService` via
-`existsByDataAndTurnoAndAtivoTrue`. Perde-se a garantia em nivel de banco — aceitavel em um
+`existsByDataAndTurnoAndAtivoTrue` (hoje, a mesma regra por data e refeicao). Perde-se a garantia em nivel de banco — aceitavel em um
 prototipo mono-usuario, mas seria preciso rever ao migrar para PostgreSQL (onde o indice parcial
 funciona e deveria ser recriado).
 
@@ -344,32 +344,244 @@ ingrediente destacado.
 `INGREDIENTES_NO_RANKING = 3`: a conclusao deterministica cita os tres primeiros, mandar dez ao
 modelo era janela de contexto gasta com ingrediente que ninguem menciona.
 
-## 8. Identificacao fica no QR Code
+## 8. Identificacao facial 1:N, supervisionada, no servidor
 
-A plataforma esta aposentando o reconhecimento facial em nuvem (`attendance-api` mais
-`educacao-attendance-worker`) por qualidade insuficiente. O `plan.md` do legado ja registrava
-"sinalizacao de descontinuacao por problemas operacionais", e o caminho da casa para biometria
-passou a ser hardware dedicado: `betha-bio-sdk`, agente standalone para dispositivos ZK e Intelbras
-iFace.
+A primeira versao deste documento descartava o reconhecimento facial e deixava a fila so no QR
+Code. Isso deixou de valer: a fila tem modo facial 1:N (a foto descobre o aluno, sem digitar
+codigo), alem do QR Code, que continua sendo o caminho de reserva. Esta secao registra a correcao de
+uma premissa errada da versao anterior e as decisoes de hoje.
 
-Isso descarta a fase 3 do plano ("cadastro e reconhecimento facial local no navegador"). O motivo
-nao e so evitar duplicar trabalho: se um servico em nuvem esta sendo desligado por nao ser bom o
-suficiente, fazer o mesmo em `face-api.js` 0.22.2 no dispositivo que a escola tiver sai pior. A
-dependencia estava declarada no frontend e nunca foi importada; foi removida.
+### Correcao de fato sobre o `betha-bio-sdk`
 
-Registro de leitura errada minha, para nao repetir: eu tinha concluido que o worker **nao** estava
-descontinuado, porque encontrei branch ativa (`ED-40538`) com commits recentes. Os commits eram
-`remove instrumentacao de diagnostico` e `anota Fenomeno B aberto` — triagem de um sistema com
-defeito, nao investimento nele. Atividade de commit nao distingue manutencao de evolucao.
+A versao anterior tratava `betha-bio-sdk` como alternativa ao `attendance-api` mais
+`educacao-attendance-worker` e dizia que a plataforma estava aposentando o servico em nuvem. As duas
+afirmacoes estavam erradas. Pela documentacao do time (`Educa/documentacao/documentacao/reconhecimento-facial/`,
+diagramas `arquitetura.png` e `processo-atualizar-foto-aluno.png`) e pela analise do ED-40538, o
+`betha-bio-sdk` e a ponta da escola da **mesma cadeia**: o aparelho Intelbras reconhece localmente,
+o agente envia os registros para `attendance-api`, que publica no SNS/SQS, e o worker grava
+`attendance_lots` e dispara os scripts de presenca e de notificacao aos responsaveis.
 
-Um dos defeitos abertos vale registro por ser de isolamento entre tenants: o `estabelecimentoId`
-chega de um header `App-Context` sem validacao contra o tenant, e alguns tenants mandam id que nao
-existe no schema (TODO no proprio `AttendanceLotProcess`).
+O worker foi corrigido e validado em producao em 2026-08-25. A "aposentadoria" do servico nao foi
+confirmada por nenhuma fonte encontrada, e este documento nao a afirma. O erro de leitura veio de
+tomar atividade de commit (`remove instrumentacao de diagnostico`, `anota Fenomeno B aberto`) por
+sinal de abandono: commit nao distingue manutencao de descontinuacao.
 
-## 9. Proximos passos identificados
+Um defeito aberto daquele servico vale registro por ser de isolamento entre tenants: o
+`estabelecimentoId` chega de um header `App-Context` sem validacao contra o tenant, e alguns tenants
+mandam id que nao existe no schema (TODO no proprio `AttendanceLotProcess`).
+
+### Decisao: tablet ou notebook com supervisao, comparacao no servidor
+
+Na merenda a fila e contagem **supervisionada**: a merendeira esta presente e faz o papel de prova
+de vida. Errar para mais custa pouco (uma refeicao a mais contada); recusar a crianca certa custa
+caro. Por isso webcam de tablet ou notebook, com a comparacao feita no servidor, serve ao caso. O
+terminal com infravermelho (Intelbras, faixa de R$ 2 mil a R$ 6 mil por ponto em anuncios de loja) e o
+caminho para presenca automatica **sem** supervisao, que e outro problema.
+
+As decisoes de desenho:
+
+- **1:N com Facenet e cosseno.** Modelo `Facenet` (128 dimensoes), detector `opencv`, metrica
+  `cosine`, o mesmo no cadastro e na fila: embedding de modelos diferentes nao e comparavel. Limiar
+  do proprio DeepFace, `find_threshold("Facenet", "cosine")` = 0.4.
+- **Reconhece so com margem.** A decisao e `RECONHECIDO` quando a menor distancia fica abaixo do
+  limiar **e** o segundo colocado esta pelo menos `MARGEM_MINIMA = 0.08` mais longe. Perto demais:
+  `AMBIGUO`, e a fila bloqueia e pede QR Code. Acima do limiar: `NAO_RECONHECIDO`. Liberar o aluno
+  errado com confianca e a falha que importa; bloquear na duvida sai barato.
+- **Maior rosto da foto.** Se aparecer mais de um rosto (crianca atras), vale o de maior area,
+  que e o de quem esta na frente da camera. O cadastro continua exigindo exatamente um.
+- **Python nao e dono de dado.** A API manda a foto e os embeddings dos candidatos no pedido
+  (`POST /api/v1/reconhecimento-facial/identificacoes`); o Python compara e responde, e nada fica la.
+  Candidato com embedding de outra dimensao e ignorado e contado na resposta; a API registra aviso.
+- **Identificacao antes da transacao.** O aluno so se conhece depois da identificacao, entao ela
+  roda antes da transacao de validacao, que recebe o aluno ja identificado. Assim a chamada remota
+  nao segura conexao de banco.
+- **Falha nunca vira 500 nem nega a refeicao por silencio.** A leitura sai `BLOQUEADO` com motivo
+  e a tela manda usar o QR: `FOTO_NAO_INFORMADA`, `NENHUM_ROSTO_CADASTRADO`, `ROSTO_NAO_RECONHECIDO`,
+  `ROSTO_AMBIGUO`, `ROSTO_NAO_DETECTADO` e `RECONHECIMENTO_FACIAL_INDISPONIVEL` (Python fora do ar,
+  5xx ou resposta malformada). Nenhum deles grava auditoria, porque nao ha aluno para associar,
+  como em `ALUNO_NAO_ENCONTRADO_OU_INATIVO`.
+- **Cadastro recusa rosto duplicado.** `POST /api/v1/alunos/{id}/rosto` devolve 409 se a mesma face ja
+  estiver em outro aluno ativo (com o codigo e o nome dele na mensagem), e 503 se o servico facial
+  estiver fora. Recadastrar o proprio rosto e permitido. Sem isso, dois cadastros do mesmo rosto
+  tornariam todo reconhecimento daquela pessoa `AMBIGUO`.
+- **So o embedding fica.** A foto nao e gravada na API, no Python nem no front.
+
+### Calibracao com o conjunto de demonstracao
+
+Medido com cinco adultos do LFW (dataset publico) cadastrados como `ALU-9001` a `ALU-9005`, cada
+um testado com uma imagem **diferente** da do cadastro, e um sexto rosto sem cadastro. Das 12
+identidades avaliadas, 7 foram descartadas: 2 sem exatamente um rosto detectavel no cadastro e 5 por
+sairem ambiguas, nao reconhecidas ou com distancia propria acima de 0.30.
+
+| Aluno | Distancia propria | Impostor mais proximo | Margem |
+|---|---|---|---|
+| ALU-9001 | 0.2961 | 0.8763 | 0.5802 |
+| ALU-9002 | 0.2791 | 0.7974 | 0.5183 |
+| ALU-9003 | 0.2945 | 0.7131 | 0.4186 |
+| ALU-9004 | 0.2331 | 0.8570 | 0.6239 |
+| ALU-9005 | 0.2284 | 0.7710 | 0.5426 |
+
+- A distancia propria fica entre 0.23 e 0.30, bem abaixo do limiar 0.4.
+- A menor margem para o impostor mais proximo e 0.4186, muito acima dos 0.08 de `MARGEM_MINIMA`,
+  que por isso foi mantida.
+- O desconhecido ficou a 0.6050 do cadastro mais proximo, acima do limiar: `NAO_RECONHECIDO`.
+
+Isso mostra que o mecanismo separa bem **adultos fotografados em boas condicoes**, com cinco
+cadastros. Nao diz nada sobre criancas, sobre luz de refeitorio nem sobre centenas de cadastros: o
+piso de 0.30 na escolha dos exemplos e uma selecao que favorece o resultado.
+
+### Limitacoes conhecidas
+
+- **Sem prova de vida.** Foto de foto passa, e e isso que permite mostrar a imagem de teste no celular
+  para a webcam. Na merenda supervisionada, a merendeira cobre esse risco.
+- Busca em todos os cadastrados (nao restrita a escola, que ainda nao existe como entidade).
+- Imagens de demonstracao sao de adultos; nenhuma foto de crianca e usada.
+
+### O que faltaria para producao
+
+- **Prova de vida**, se houver uso sem supervisao.
+- **Recadastro periodico**: o rosto de uma crianca muda com o tempo.
+- **Piloto com criancas**, medindo falso aceite e falsa recusa para calibrar limiar e margem; os
+  numeros acima nao servem de base para isso.
+- **LGPD.** Biometria e dado pessoal sensivel (art. 5o, II, e art. 11); dado de crianca exige
+  consentimento especifico de um responsavel (art. 14); o embedding tambem e biometria. Isso pede
+  alternativa sem biometria para quem nao consentir (o QR Code ja e), RIPD, criptografia do embedding,
+  prazo de retencao e exclusao.
+- **Falha de reconhecimento nunca nega a refeicao**: cai para QR Code ou confirmacao do funcionario.
+- **Busca restrita a escola**, que exige a entidade escola.
+- Autenticacao e autorizacao da API, que hoje nao existem.
+
+### Pre-requisitos para demonstrar em outra maquina
+
+O detector `opencv` baixa `haarcascade_frontalface_default.xml` e `haarcascade_eye.xml` de github.com
+para `~/.deepface/weights/` no primeiro uso, e o Facenet (cerca de 90 MB) vem na primeira
+requisicao. Rode o analytics uma vez com internet antes de apresentar.
+
+## 9. Refeicao como unidade da fila e da analise
+
+Antes, o turno fazia papel de refeicao: um cardapio por (data, turno), um fechamento por (data,
+turno, item) e uma leitura na fila que nao sabia qual refeicao era. Isso nao descreve a escola
+real: uma turma parcial recebe uma ou duas refeicoes, uma integral recebe tres ou mais, e a taxa de
+execucao muda muito de uma refeicao para outra (de 20% a 41% no historico do legado). Agora a
+**refeicao** e a unidade do cardapio, da fila, do fechamento e da analise.
+
+### O regime vem do turno da turma
+
+Nao entrou campo novo na turma. O turno que ela ja tinha diz o regime: `INTEGRAL` e turma de tempo
+integral; `MANHA`, `TARDE` e `NOITE` sao turmas parciais daquele periodo. O aluno herda o regime
+pela enturmacao vigente na data. O turno saiu de cardapio, auditoria, medicao e historico (V16) e
+so continua em `turma` e, para leitura, em `relatorio_ia`.
+
+### A grade de refeicoes
+
+`TipoRefeicao` (tabela `tipo_refeicao`, com os turnos com direito em `tipo_refeicao_turno`) tem
+nome, ordem, janela de horario e turnos. A V14 semeia, com ids fixos:
+
+| Refeicao | Janela | Turnos com direito |
+|---|---|---|
+| Cafe da manha | 07:00 a 08:00 | INTEGRAL |
+| Lanche da manha | 09:30 a 10:30 | MANHA, INTEGRAL |
+| Almoco | 11:30 a 13:00 | INTEGRAL |
+| Lanche da tarde | 15:00 a 16:00 | TARDE, INTEGRAL |
+| Lanche da noite | 20:00 a 21:00 | NOITE |
+
+A janela e **`[inicio, fim)`**: as 08:00 em ponto ja nao sao Cafe da manha. Assim duas refeicoes
+encostadas nao disputam o mesmo instante. A regra de consistencia, validada ao montar a grade
+(`GradeRefeicoes.de`) e coberta por teste: para um mesmo turno de turma as janelas nao se
+sobrepoem, entao dado o horario e o turno existe no maximo uma refeicao. Janelas sobrepostas so
+sao aceitas se nao dividirem turno.
+
+Grade vazia ou inconsistente nao vira erro 500 nem nega refeicao por acaso: a fila bloqueia com
+`GRADE_DE_REFEICOES_INVALIDA`, registra aviso no log e orienta a corrigir a configuracao. A grade
+vem pronta por migration e e a mesma para a escola unica do prototipo; nao ha tela de cadastro
+nem escrita (`GET /api/v1/tipos-refeicao` so le).
+
+### Fila: refeicao pelo horario, sem escolha da merendeira
+
+Depois de identificar o aluno (QR ou facial, sem mudanca), a grade (`GradeRefeicoes.resolver`) pega a refeicao
+cuja janela contem o horario e que da direito ao turno da turma vigente:
+
+- nenhuma refeicao no horario: `FORA_DO_HORARIO_DE_REFEICAO` (checado antes de identificar, para
+  nao chamar o reconhecimento facial a toa);
+- ha refeicao no horario, mas nao para a turma: `REFEICAO_NAO_PREVISTA_PARA_TURMA`;
+- aluno sem turma vigente: vale a refeicao da janela, a de menor `ordem` se houver mais de uma,
+  no mesmo espirito de antes, que autorizava sem enturmacao e carimbava "Sem turma";
+- cardapio da (data, refeicao) ausente: `CARDAPIO_NAO_CONFIGURADO`, como antes.
+
+**Repeticao continua permitida.** O bloqueio de `merenda.fila.bloqueio-repeticao` (2 minutos) agora
+conta dentro da mesma refeicao. Depois da janela o aluno repete, e a repeticao fica registrada e
+entra na analise. O que a mudanca evita e o erro oposto: bloquear o aluno integral no almoco porque
+ele ja comeu no cafe. A auditoria grava o id e o nome da refeicao carimbados, como ja fazia com a
+turma, para renomear ou remover uma refeicao nao reescrever o passado.
+
+### Relogio de demonstracao com deslocamento
+
+A grade deixa vaos (antes das 07:00, 08:00 a 09:30, 10:30 a 11:30, 13:00 a 15:00,
+16:00 a 20:00 e depois das 21:00) e, fora das janelas, a fila
+bloqueia. Para a apresentacao nao depender da hora real, a propriedade opcional
+`merenda.demo.horario` (`HH:mm`) troca o `Clock` da aplicacao (`shared/config`) por um relogio com
+**deslocamento**: comeca hoje naquele horario e segue andando junto com o real. Nao e um relogio
+congelado, porque a janela de 2 minutos da repeticao precisa continuar passando durante a
+demonstracao. Sem a propriedade vale o relogio real; valor invalido impede a subida, em vez de a
+demonstracao rodar silenciosamente na hora errada.
+
+### Analise e contrato com o Python
+
+O relatorio de IA e o Dashboard sao pedidos por (data de referencia, refeicao). A amostra minima
+(20 dias com fechamento nos ultimos 30) conta dias da refeicao. O contrato Java para Python troca
+`turno` por `refeicao` (`id` e `nome`), traz `historicoSemRefeicao` e sobe para `schemaVersion=5`
+na resposta; a previsao de consumo tambem passa a receber `refeicao`. Relatorios antigos
+continuam abrindo com o `turno` antigo.
+
+### Mapeamento do legado
+
+A base local de demonstracao e recriada, entao a demonstracao nao depende de conversao. As
+migrations so deixam valido o banco de quem ja tinha dados (rede de seguranca):
+
+- cardapios, consumos, fechamentos e relatorios antigos recebem a refeicao pelo turno: MANHA vira
+  Lanche da manha, TARDE Lanche da tarde, NOITE Lanche da noite e INTEGRAL Almoco;
+- o historico sintetico do legado (`historico_consumo.refeicao`, texto) e mapeado pelo prefixo do
+  nome para Cafe da manha, Lanche da manha, Almoco ou Lanche da tarde; o que nao tem
+  correspondencia clara (frutas, turno estendido, "manha e tarde") fica sem refeicao e fora da
+  analise por refeicao, e o relatorio avisa quantos registros ficaram de fora;
+- em bases antigas, o Almoco mapeado do INTEGRAL nao tem consumo (a fila antiga nunca resolveu
+  INTEGRAL), entao a analise dele considera so os dias com consumo.
+
+A V15 acrescenta as colunas de refeicao (expand) e preenche as linhas antigas; a V16 remove o
+turno (contract). Separadas para cada etapa deixar a suite verde.
+
+### O que ficou fora
+
+- Grade de refeicoes diferente por escola (o prototipo tem uma escola so) e tela para cadastrar a
+  grade.
+- Calculo nutricional, per capita do PNAE e contraturno com turma de outro periodo.
+- Mudar a identificacao: QR e facial seguem como estavam; so o que acontece depois de identificar
+  mudou.
+- Dados antigos de turma e de consumo da demonstracao: nao houve migracao, o banco local e
+  recriado e o rosto cadastrado a mao precisa ser cadastrado de novo, de preferencia num aluno de
+  turma integral.
+
+### Painel do dia no fechamento
+
+`GET /api/v1/fechamentos/dia?data=` devolve, para cada refeicao da grade, uma situacao calculada
+na hora (nada e gravado): `SEM_CARDAPIO`, `FECHADA`, `AGUARDANDO`, `EM_ANDAMENTO` ou `PENDENTE`,
+nessa precedencia. A hora vem do `Clock` no fuso `America/Sao_Paulo`, com janela `[inicio, fim)`.
+
+- Fechamento parcial nao fecha: so e `FECHADA` quando toda receita do cardapio ativo tem medicao
+  (data, refeicao, escola 1). Uma medicao solta nao some da pendencia.
+- Fechar fora da janela continua permitido; a situacao orienta, nao bloqueia.
+- A demonstracao deixou de pre-gerar o fechamento de hoje do Almoco: nenhuma refeicao de hoje vem
+  fechada, entao o painel tem o que mostrar em qualquer horario.
+- `GET /api/v1/fechamentos/pendencias?ate=&dias=` lista as refeicoes com cardapio, janela ja
+  encerrada e sem fechamento completo, inclusive as de hoje (`dias` de 1 a 31, padrao 7).
+
+## 10. Proximos passos identificados
 
 ### Resolvidos desde a primeira versao deste documento
 
+- **`INTEGRAL` nao acumulava consumo pela fila.** O `TurnoResolver` resolvia so pelo relogio e nunca
+  devolvia INTEGRAL. Resolvida na secao 9: a fila resolve a refeicao pelo horario e pelo turno da
+  turma, e a turma integral passa em varias refeicoes.
 - **Historico no payload da IA.** `RelatorioIAWorker.consumosDosDiasAnteriores` envia a serie do
   mesmo turno. Era o `List.of()` hardcoded do item 11 da RETROSPECTIVA.
 - **Itens do cardapio no payload.** `itensDoCardapio` e `itensDoCardapioComTendencia` levam a taxa
@@ -387,9 +599,6 @@ existe no schema (TODO no proprio `AttendanceLotProcess`).
   falta a regra que decide quando a queda sustenta uma recomendacao de ciclo.
 - **Motivo dos bloqueios agregado.** `tentativasBloqueadas` sozinho diz pouco: "sem matricula" e
   "ja consumiu hoje" sao situacoes opostas e hoje viram o mesmo numero.
-- **`INTEGRAL` nao acumula consumo pela fila.** O `TurnoResolver` resolve pelo relogio da catraca
-  e nunca devolve INTEGRAL, entao um cardapio INTEGRAL nao gera historico pelo fluxo real —
-  justamente o turno mais usado em producao.
 - **Cores dos cards do painel sao estaticas.** `Aceitacao` sempre verde e `Risco desperdicio`
   sempre ambar, independente do valor. Aceitacao BAIXA vai aparecer em verde.
 - **Cadastro de cardapio ainda e campo de texto.** `GET /api/v1/receitas` existe, o front nao usa.

@@ -12,6 +12,8 @@ public record RelatorioIAResponse(
     UUID id,
     LocalDate dataReferencia,
     Turno turno,
+    UUID tipoRefeicaoId,
+    String refeicao,
     StatusRelatorioIA status,
     String provedor,
     String modelo,
@@ -22,6 +24,8 @@ public record RelatorioIAResponse(
     Instant criadoEm,
     Instant iniciadoEm,
     Instant concluidoEm,
-    IndicadoresLogisticos indicadores
+    IndicadoresLogisticos indicadores,
+    UUID turmaId,
+    String escopoCardapio
 ) {
 }

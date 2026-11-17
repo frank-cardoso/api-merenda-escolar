@@ -5,16 +5,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import br.com.frankcardoso.merenda.cardapio.domain.Cardapio;
 import br.com.frankcardoso.merenda.catalogo.domain.Receita;
 import br.com.frankcardoso.merenda.catalogo.infrastructure.ReceitaRepository;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
+import br.com.frankcardoso.merenda.refeicao.domain.RefeicaoPadrao;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
+@ActiveProfiles("test")
 @Transactional
 class CardapioReceitaBackfillTest {
 
@@ -23,15 +25,15 @@ class CardapioReceitaBackfillTest {
     @Autowired ReceitaRepository receitas;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private Cardapio salvar(LocalDate data, Turno turno, String itensJson) {
-        return cardapios.save(new Cardapio(UUID.randomUUID(), data, turno, "Teste", "",
+    private Cardapio salvar(LocalDate data, RefeicaoPadrao refeicao, String itensJson) {
+        return cardapios.save(new Cardapio(UUID.randomUUID(), data, refeicao.id(), "Teste", "",
             itensJson, 100, true));
     }
 
     @Test
     void devePreencherReceitaIdPeloNomeExato() throws Exception {
         var receita = receitas.save(new Receita(UUID.randomUUID(), "Arroz do backfill", null));
-        var cardapio = salvar(LocalDate.of(2031, 3, 10), Turno.MANHA,
+        var cardapio = salvar(LocalDate.of(2031, 3, 10), RefeicaoPadrao.LANCHE_DA_MANHA,
             "[{\"nome\":\"Arroz do backfill\",\"quantidade\":\"5 kg\"}]");
 
         backfill.preencher();
@@ -44,7 +46,7 @@ class CardapioReceitaBackfillTest {
 
     @Test
     void deveDeixarSemVinculoOItemQueNaoExisteNoCatalogo() throws Exception {
-        var cardapio = salvar(LocalDate.of(2031, 3, 11), Turno.TARDE,
+        var cardapio = salvar(LocalDate.of(2031, 3, 11), RefeicaoPadrao.LANCHE_DA_TARDE,
             "[{\"nome\":\"Prato que nao existe no catalogo\",\"quantidade\":null}]");
 
         backfill.preencher();
@@ -60,7 +62,7 @@ class CardapioReceitaBackfillTest {
         var receita = receitas.save(new Receita(UUID.randomUUID(), "Feijao do backfill", null));
         var original = "[{\"receitaId\":\"" + receita.getId()
             + "\",\"nome\":\"Feijao do backfill\",\"quantidade\":\"2 kg\"}]";
-        var cardapio = salvar(LocalDate.of(2031, 3, 12), Turno.NOITE, original);
+        var cardapio = salvar(LocalDate.of(2031, 3, 12), RefeicaoPadrao.LANCHE_DA_NOITE, original);
 
         backfill.preencher();
 

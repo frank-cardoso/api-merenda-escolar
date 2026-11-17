@@ -1,6 +1,5 @@
 package br.com.frankcardoso.merenda.analytics.application.port;
 
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -13,7 +12,7 @@ import java.util.List;
  */
 public record PrevisaoConsumoInput(
     LocalDate dataReferencia,
-    Turno turno,
+    String refeicao,
     String cardapio,
     int quantidadePlanejada,
     long consumosAutorizados,
@@ -25,7 +24,7 @@ public record PrevisaoConsumoInput(
 
     public PrevisaoConsumoInput(
         LocalDate dataReferencia,
-        Turno turno,
+        String refeicao,
         String cardapio,
         int quantidadePlanejada,
         long consumosAutorizados,
@@ -33,7 +32,7 @@ public record PrevisaoConsumoInput(
         BigDecimal taxaConsumoPlanejado,
         long sobraDePlanejamento
     ) {
-        this(dataReferencia, turno, cardapio, quantidadePlanejada, consumosAutorizados,
+        this(dataReferencia, refeicao, cardapio, quantidadePlanejada, consumosAutorizados,
             tentativasBloqueadas, taxaConsumoPlanejado, sobraDePlanejamento, List.of());
     }
 

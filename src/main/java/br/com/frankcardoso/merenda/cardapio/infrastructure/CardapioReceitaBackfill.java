@@ -29,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
  * Idempotente: item que ja tem id e ignorado, entao reiniciar nao refaz nada.
  */
 @Component
-@Order(4)
 public class CardapioReceitaBackfill {
 
     private static final Logger LOG = LoggerFactory.getLogger(CardapioReceitaBackfill.class);
@@ -48,6 +47,7 @@ public class CardapioReceitaBackfill {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(4)
     @Transactional
     public void preencher() {
         if (receitas.count() == 0) return;

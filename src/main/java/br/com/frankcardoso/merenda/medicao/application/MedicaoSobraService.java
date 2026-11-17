@@ -13,7 +13,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
+import br.com.frankcardoso.merenda.refeicao.application.GradeRefeicoesService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,23 +26,25 @@ public class MedicaoSobraService {
     private final MedicaoSobraRepository repository;
     private final ReceitaRepository receitas;
     private final CardapioRepository cardapios;
+    private final GradeRefeicoesService grade;
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final int escolaDoPrototipo;
 
     public MedicaoSobraService(MedicaoSobraRepository repository, ReceitaRepository receitas,
-        CardapioRepository cardapios, ObjectMapper objectMapper, Clock clock,
+        CardapioRepository cardapios, GradeRefeicoesService grade, ObjectMapper objectMapper, Clock clock,
         @Value("${merenda.medicao.escola-id:1}") int escolaDoPrototipo) {
         this.repository = repository;
         this.receitas = receitas;
         this.cardapios = cardapios;
+        this.grade = grade;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.escolaDoPrototipo = escolaDoPrototipo;
     }
 
     /**
-     * Relancar o mesmo item no mesmo dia/turno sobrescreve a medicao anterior.
+     * Relancar o mesmo item na mesma refeição do dia sobrescreve a medicao anterior.
      *
      * Medicao e observacao, nao evento: se a cozinha corrige o numero depois de pesar de novo, o
      * certo e o valor corrigido — nao duas linhas somando o dobro de porcoes.
@@ -58,33 +60,34 @@ public class MedicaoSobraService {
             throw new MedicaoSobraInconsistenteException("Fechamento deve conter pelo menos um item");
         }
         var data = requests.get(0).data();
-        var turno = requests.get(0).turno();
+        var tipoRefeicaoId = requests.get(0).tipoRefeicaoId();
         if (requests.stream().anyMatch(request -> !data.equals(request.data())
-            || turno != request.turno())) {
+            || !tipoRefeicaoId.equals(request.tipoRefeicaoId()))) {
             throw new MedicaoSobraInconsistenteException(
-                "Todos os itens do fechamento devem usar a mesma data e turno");
+                "Todos os itens do fechamento devem usar a mesma data e refeição");
         }
         return requests.stream().map(this::registrarInterno).toList();
     }
 
     private MedicaoSobraResponse registrarInterno(MedicaoSobraRequest request) {
+        var refeicao = grade.buscar(request.tipoRefeicaoId());
         if (!receitas.existsById(request.receitaId())) {
             throw new MedicaoSobraInconsistenteException(
                 "Receita %s não existe no catálogo".formatted(request.receitaId()));
         }
         if (!pertenceAoCardapio(request)) {
             throw new MedicaoSobraInconsistenteException(
-                "Receita %s não pertence ao cardápio de %s / %s"
-                    .formatted(request.receitaId(), request.data(), request.turno()));
+                "Receita %s não pertence ao cardápio de %s (%s)"
+                    .formatted(request.receitaId(), request.data(), refeicao.getNome()));
         }
 
-        var existente = repository.findByDataAndTurnoAndEscolaIdAndReceitaId(
-            request.data(), request.turno(), escolaDoPrototipo, request.receitaId());
+        var existente = repository.findByDataAndTipoRefeicaoIdAndEscolaIdAndReceitaId(
+            request.data(), request.tipoRefeicaoId(), escolaDoPrototipo, request.receitaId());
 
         var medicao = new MedicaoSobra(
             existente.map(MedicaoSobra::getId).orElseGet(UUID::randomUUID),
             request.data(),
-            request.turno(),
+            request.tipoRefeicaoId(),
             escolaDoPrototipo,
             request.receitaId(),
             request.porcoesPreparadas(),
@@ -99,7 +102,7 @@ public class MedicaoSobraService {
     }
 
     private boolean pertenceAoCardapio(MedicaoSobraRequest request) {
-        var cardapio = cardapios.findByDataAndTurnoAndAtivoTrue(request.data(), request.turno())
+        var cardapio = cardapios.findByDataAndTipoRefeicaoIdAndAtivoTrue(request.data(), request.tipoRefeicaoId())
             .orElse(null);
         if (cardapio == null) return false;
         try {
@@ -112,8 +115,9 @@ public class MedicaoSobraService {
     }
 
     @Transactional(readOnly = true)
-    public List<MedicaoSobraResponse> listar(LocalDate data, Turno turno) {
-        return repository.findAllByDataAndTurnoAndEscolaIdOrderByReceitaId(data, turno,
-            escolaDoPrototipo).stream().map(MedicaoSobraResponse::de).toList();
+    public List<MedicaoSobraResponse> listar(LocalDate data, UUID tipoRefeicaoId) {
+        grade.buscar(tipoRefeicaoId);
+        return repository.findAllByDataAndTipoRefeicaoIdAndEscolaIdOrderByReceitaId(data,
+            tipoRefeicaoId, escolaDoPrototipo).stream().map(MedicaoSobraResponse::de).toList();
     }
 }

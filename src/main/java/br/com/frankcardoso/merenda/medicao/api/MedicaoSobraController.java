@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.time.LocalDate;
 import java.util.List;
-import br.com.frankcardoso.merenda.fila.domain.Turno;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/medicoes-sobra")
@@ -39,7 +39,7 @@ public class MedicaoSobraController {
     @GetMapping
     List<MedicaoSobraResponse> listar(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
-        @RequestParam Turno turno) {
-        return service.listar(data, turno);
+        @RequestParam UUID tipoRefeicaoId) {
+        return service.listar(data, tipoRefeicaoId);
     }
 }

@@ -1,10 +1,11 @@
 package br.com.frankcardoso.merenda.historico.application;
 
+import static br.com.frankcardoso.merenda.refeicao.domain.RefeicaoPadrao.ALMOCO;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import br.com.frankcardoso.merenda.fila.domain.Turno;
 import br.com.frankcardoso.merenda.historico.infrastructure.HistoricoConsumoRepository;
 import br.com.frankcardoso.merenda.historico.infrastructure.HistoricoConsumoRepository.ItemAgregado;
 import br.com.frankcardoso.merenda.historico.infrastructure.HistoricoConsumoRepository.ItemDiaAgregado;
@@ -52,26 +53,28 @@ class HistoricoConsumoServiceTest {
     @Test
     void deveBuscarAsReceitasDoCardapioPorId() {
         var macarrao = UUID.randomUUID();
-        when(repository.taxaPorReceitas(Turno.MANHA, HOJE, List.of(macarrao))).thenReturn(List.of(
-            item(macarrao, "Macarrao ao sugo", 20, 10)
+        when(repository.taxaPorReceitas(ALMOCO.id(), HOJE, List.of(macarrao))).thenReturn(List.of(
+            item(macarrao, "Macarrão ao sugo", 20, 10)
         ));
 
-        var itens = service().itensDoCardapioComTaxa(HOJE, Turno.MANHA, List.of(macarrao));
+        var itens = service().itensDoCardapioComTaxa(HOJE, ALMOCO.id(), List.of(macarrao));
+
+        verify(repository).taxaPorReceitas(ALMOCO.id(), HOJE, List.of(macarrao));
 
         assertThat(itens).singleElement().satisfies(item -> {
             assertThat(item.receitaId()).isEqualTo(macarrao);
-            assertThat(item.item()).isEqualTo("Macarrao ao sugo");
+            assertThat(item.item()).isEqualTo("Macarrão ao sugo");
         });
     }
 
     @Test
     void naoDeveConsultarNadaQuandoOCardapioNaoTemReceita() {
-        assertThat(service().itensDoCardapioComTaxa(HOJE, Turno.MANHA, List.of())).isEmpty();
+        assertThat(service().itensDoCardapioComTaxa(HOJE, ALMOCO.id(), List.of())).isEmpty();
     }
 
     @Test
     void naoDeveConsultarRepositorioParaCardapioSemItens() {
-        var itens = service().itensDoCardapioComTaxa(HOJE, Turno.MANHA, List.of());
+        var itens = service().itensDoCardapioComTaxa(HOJE, ALMOCO.id(), List.of());
 
         assertThat(itens).isEmpty();
         verifyNoInteractions(repository);
@@ -80,24 +83,26 @@ class HistoricoConsumoServiceTest {
     @Test
     void deveAgruparSerieDiariaPorItemMantendoOrdemCronologica() {
         var macarrao = UUID.randomUUID();
-        when(repository.serieDiariaPorReceita(Turno.MANHA, HOJE, List.of(macarrao)))
+        when(repository.serieDiariaPorReceita(ALMOCO.id(), HOJE, List.of(macarrao)))
             .thenReturn(List.of(
-                itemDia(macarrao, "Macarrao ao sugo", HOJE.minusDays(3), 20, 18),
-                itemDia(macarrao, "Macarrao ao sugo", HOJE.minusDays(1), 20, 8)
+                itemDia(macarrao, "Macarrão ao sugo", HOJE.minusDays(3), 20, 18),
+                itemDia(macarrao, "Macarrão ao sugo", HOJE.minusDays(1), 20, 8)
             ));
 
-        var serie = service().serieDiariaDosItens(HOJE, Turno.MANHA, List.of(macarrao));
+        var serie = service().serieDiariaDosItens(HOJE, ALMOCO.id(), List.of(macarrao));
+
+        verify(repository).serieDiariaPorReceita(ALMOCO.id(), HOJE, List.of(macarrao));
 
         assertThat(serie).hasSize(1);
         assertThat(serie.getFirst().receitaId()).isEqualTo(macarrao);
-        assertThat(serie.getFirst().item()).isEqualTo("Macarrao ao sugo");
+        assertThat(serie.getFirst().item()).isEqualTo("Macarrão ao sugo");
         assertThat(serie.getFirst().taxasExecucao())
             .containsExactly(new BigDecimal("90.0"), new BigDecimal("40.0"));
     }
 
     @Test
     void naoDeveConsultarRepositorioQuandoNaoHaItensResolvidos() {
-        var serie = service().serieDiariaDosItens(HOJE, Turno.MANHA, List.of());
+        var serie = service().serieDiariaDosItens(HOJE, ALMOCO.id(), List.of());
 
         assertThat(serie).isEmpty();
         verifyNoInteractions(repository);

@@ -3,7 +3,7 @@ package br.com.frankcardoso.merenda.medicao.domain;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import br.com.frankcardoso.merenda.fila.domain.Turno;
+import br.com.frankcardoso.merenda.refeicao.domain.RefeicaoPadrao;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -12,7 +12,8 @@ import org.junit.jupiter.api.Test;
 class MedicaoSobraTest {
 
     private MedicaoSobra criar(int preparadas, int servidas, int sobra, int resto) {
-        return new MedicaoSobra(UUID.randomUUID(), LocalDate.of(2026, 9, 21), Turno.MANHA, 1,
+        return new MedicaoSobra(UUID.randomUUID(), LocalDate.of(2026, 9, 21),
+            RefeicaoPadrao.LANCHE_DA_MANHA.id(), 1,
             UUID.randomUUID(), preparadas, servidas, sobra, resto, "LANCADA", Instant.EPOCH);
     }
 
